@@ -1,0 +1,180 @@
+package catalog
+
+import (
+	"context"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/GerhardOfRivia/aarde/internal/geo"
+	"github.com/google/uuid"
+)
+
+var (
+	ErrNotFound        = errors.New("imagery not found")
+	ErrConflict        = errors.New("image ID already exists with a different checksum")
+	ErrInvalidGeometry = errors.New("invalid geometry")
+)
+
+// Imagery is shared by the CLI and server, independently of API serialization.
+type Imagery struct {
+	ID                                 uuid.UUID
+	CatalogID, ImageID, DisplayName    string
+	AcquiredAt                         *time.Time
+	ImportedAt, CreatedAt              time.Time
+	Footprint                          geo.Geometry
+	Checksum, AssetLocation, SourceCRS string
+	Width, Height, BandCount           int
+	Metadata                           json.RawMessage
+}
+
+type Query struct {
+	CatalogID     string
+	ImageIDs      []string
+	Geometry      *geo.Geometry
+	Limit, Offset int
+}
+
+type Page struct {
+	Items         []Imagery
+	Limit, Offset int
+	HasMore       bool
+}
+
+// Store is the persistence boundary; spatial correctness is tested against PostGIS.
+type Store interface {
+	Get(context.Context, string, string) (Imagery, error)
+	ByChecksum(context.Context, string, string) (Imagery, error)
+	Insert(context.Context, Imagery) (Imagery, bool, error)
+	Search(context.Context, Query) (Page, error)
+	Catalogs(context.Context) ([]string, error)
+	ValidateGeometry(context.Context, geo.Geometry) error
+	Ping(context.Context) error
+}
+
+type Service struct{ store Store }
+
+func New(store Store) *Service { return &Service{store: store} }
+func (s *Service) Get(ctx context.Context, cat, id string) (Imagery, error) {
+	return s.store.Get(ctx, cat, id)
+}
+func (s *Service) Catalogs(ctx context.Context) ([]string, error) { return s.store.Catalogs(ctx) }
+func (s *Service) Ping(ctx context.Context) error                 { return s.store.Ping(ctx) }
+
+func ValidateName(name string) error {
+	if len(name) == 0 || len(name) > 255 || strings.TrimSpace(name) != name || strings.ContainsAny(name, "/\\\x00\r\n\t") {
+		return errors.New("IDs must be 1–255 characters without slashes, control characters, or surrounding whitespace")
+	}
+	for _, r := range name {
+		if r < 32 || r == 127 {
+			return errors.New("IDs must not contain control characters")
+		}
+	}
+	return nil
+}
+
+func NormalizeQuery(q *Query) error {
+	if q.Limit == 0 {
+		q.Limit = 50
+	}
+	if q.Limit < 1 || q.Limit > 200 || q.Offset < 0 || q.Offset > 1000000 {
+		return errors.New("limit must be 1–200 and offset 0–1000000")
+	}
+	if q.CatalogID != "" {
+		if err := ValidateName(q.CatalogID); err != nil {
+			return err
+		}
+	}
+	if len(q.ImageIDs) > 100 {
+		return errors.New("at most 100 image IDs are allowed")
+	}
+	for _, id := range q.ImageIDs {
+		if err := ValidateName(id); err != nil {
+			return err
+		}
+	}
+	if q.Geometry != nil {
+		if err := q.Geometry.Validate(); err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidGeometry, err)
+		}
+	}
+	return nil
+}
+
+func (s *Service) Search(ctx context.Context, q Query) (Page, error) {
+	if err := NormalizeQuery(&q); err != nil {
+		return Page{}, err
+	}
+	if q.Geometry != nil {
+		if err := s.store.ValidateGeometry(ctx, *q.Geometry); err != nil {
+			return Page{}, err
+		}
+	}
+	return s.store.Search(ctx, q)
+}
+
+func ValidateImagery(i Imagery) error {
+	if err := ValidateName(i.CatalogID); err != nil {
+		return fmt.Errorf("catalog: %w", err)
+	}
+	if err := ValidateName(i.ImageID); err != nil {
+		return fmt.Errorf("image: %w", err)
+	}
+	if i.Width <= 0 || i.Height <= 0 || i.BandCount <= 0 || i.SourceCRS == "" || i.AssetLocation == "" {
+		return errors.New("raster requires dimensions, bands, a CRS, and an asset location")
+	}
+	b, err := hex.DecodeString(i.Checksum)
+	if err != nil || len(b) != 32 {
+		return errors.New("checksum must be SHA-256")
+	}
+	if !json.Valid(i.Metadata) {
+		return errors.New("invalid raster metadata")
+	}
+	if err := i.Footprint.Validate(); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidGeometry, err)
+	}
+	return nil
+}
+
+// CheckImport does no writes. A checksum match wins over a filename conflict.
+func (s *Service) CheckImport(ctx context.Context, i Imagery) (Imagery, bool, error) {
+	if err := ValidateImagery(i); err != nil {
+		return Imagery{}, false, err
+	}
+	existing, err := s.store.ByChecksum(ctx, i.CatalogID, i.Checksum)
+	if err == nil {
+		return existing, true, nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return Imagery{}, false, err
+	}
+	existing, err = s.store.Get(ctx, i.CatalogID, i.ImageID)
+	if err == nil {
+		// Another importer may have inserted between the two reads.
+		if existing.Checksum == i.Checksum {
+			return existing, true, nil
+		}
+		return Imagery{}, false, ErrConflict
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return Imagery{}, false, err
+	}
+	if err := s.store.ValidateGeometry(ctx, i.Footprint); err != nil {
+		return Imagery{}, false, err
+	}
+	return i, false, nil
+}
+
+func (s *Service) Import(ctx context.Context, i Imagery) (Imagery, bool, error) {
+	existing, found, err := s.CheckImport(ctx, i)
+	if err != nil || found {
+		return existing, found, err
+	}
+	i.ID = uuid.New()
+	i.ImportedAt = time.Now().UTC()
+	i.CreatedAt = i.ImportedAt
+	return s.store.Insert(ctx, i)
+}

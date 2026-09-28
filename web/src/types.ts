@@ -1,0 +1,91 @@
+import type { Polygon, MultiPolygon } from "geojson";
+export type Area = Polygon | MultiPolygon;
+export type Basemap = "osm" | "none";
+export interface Imagery {
+  id: string;
+  catalog_id: string;
+  image_id: string;
+  display_name: string;
+  acquired_at: string | null;
+  imported_at: string;
+  created_at: string;
+  footprint: Area;
+  checksum: string;
+  asset_location: string;
+  width: number;
+  height: number;
+  band_count: number;
+  source_crs: string;
+  metadata: Record<string, unknown>;
+}
+export interface Page {
+  items: Imagery[];
+  limit: number;
+  offset: number;
+  has_more: boolean;
+}
+export interface Search {
+  catalog: string;
+  ids?: string[];
+  geometry?: Area;
+}
+
+export interface AccessInfo {
+  version: string;
+  public_read: boolean;
+  authenticated: boolean;
+  read_only: boolean;
+  basemap: Basemap;
+}
+
+export class APIError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+    this.name = "APIError";
+  }
+}
+
+export async function request<T>(
+  url: string,
+  token: string,
+  options?: RequestInit,
+): Promise<T> {
+  const headers = new Headers(options?.headers);
+  headers.set("Accept", "application/json");
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const response = await fetch(url, { ...options, headers, cache: "no-store" });
+  if (!response.ok) {
+    let message = `Request failed (${response.status})`;
+    try {
+      const body = await response.json();
+      message = body.error?.message ?? message;
+    } catch {
+      // Preserve the HTTP status when a proxy sends a non-JSON response.
+    }
+    throw new APIError(response.status, message);
+  }
+  return response.json();
+}
+export function search(
+  token: string,
+  criteria: Search,
+  offset: number,
+  signal: AbortSignal,
+): Promise<Page> {
+  if (criteria.geometry)
+    return request("/api/v1/imagery/search", token, {
+      method: "POST",
+      signal,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        catalog_id: criteria.catalog,
+        geometry: criteria.geometry,
+        limit: 50,
+        offset,
+      }),
+    });
+  const query = new URLSearchParams({ limit: "50", offset: String(offset) });
+  if (criteria.catalog) query.set("catalog_id", criteria.catalog);
+  criteria.ids?.forEach((id) => query.append("image_id", id));
+  return request(`/api/v1/imagery?${query}`, token, { signal });
+}

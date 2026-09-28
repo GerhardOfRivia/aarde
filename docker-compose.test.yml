@@ -1,0 +1,24 @@
+# Isolated, disposable PostGIS. No production volumes or published ports.
+services:
+  postgres:
+    image: postgis/postgis:17-3.5
+    environment:
+      POSTGRES_DB: aarde_test
+      POSTGRES_USER: aarde
+      POSTGRES_PASSWORD: test-only
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aarde -d aarde_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  tests:
+    build:
+      context: .
+      target: test
+    environment:
+      AARDE_TEST_DATABASE_URL: postgres://aarde:test-only@postgres:5432/aarde_test?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
