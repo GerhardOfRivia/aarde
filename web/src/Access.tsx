@@ -94,7 +94,7 @@ export function AccessGate({ children }: { children(session: Session): ReactNode
   return <div className="app">
     <header className="header">
       <a className="brand" href="/" aria-label="Aarde home"><span className="brand-mark">◈</span>aarde</a>
-      <div className="header-actions"><ThemeControl /></div>
+      <div className="header-actions"><Button className="access-button" size="small" href="/docs/">API docs</Button><ThemeControl /></div>
     </header>
     <main className="auth-shell">
       <section className="auth-card" aria-labelledby="auth-title">

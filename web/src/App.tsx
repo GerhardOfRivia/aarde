@@ -140,6 +140,7 @@ function CatalogApp({ session }: { session: Session }) {
         </a>
         <span className="header-note">Local imagery. Spatial discovery.</span>
         <div className="header-actions">
+          <Button className="access-button" size="small" href="/docs/">API docs</Button>
           <ThemeControl />
           <Chip className="access-badge" label={info.authenticated ? "Authenticated · Read only" : "Read only"} size="small" variant="outlined" />
           {info.authenticated

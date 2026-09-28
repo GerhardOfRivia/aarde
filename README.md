@@ -160,6 +160,12 @@ Acquisition time is separate from import/creation time. The inspector recognizes
 
 ## HTTP API
 
+Open **API docs** in the web header or visit [`/docs/`](http://localhost:8080/docs/) for the interactive Swagger UI. Download the OpenAPI 3.1 document from [`/openapi.json`](http://localhost:8080/openapi.json). Both are accessible without a token and bundled into the Go binary, with no CDN or external validator required.
+
+Use **Authorize** to enter the token from the private file named in the startup log, without the `Bearer` prefix. Swagger keeps it in memory until the page reloads. **Try it out** sends real requests to the same server; all current operations, including polygon search, are read-only. The served spec includes the running build version and reflects `AARDE_WEB_PUBLIC_READ`, including anonymous polygon search when enabled. Explicitly supplied invalid tokens are always rejected.
+
+The source specification is [`internal/api/openapi.json`](internal/api/openapi.json). Update it alongside API changes. `cd web && npm test` and `npm run build` validate it; Go tests check route coverage, authentication, response schemas, and embedded documentation assets. Build the frontend before running Go tests.
+
 Routes are under `/api/v1`. All reads require the bearer token unless public reads are enabled; GET routes also support HEAD. Footprints are GeoJSON MultiPolygons in EPSG:4326, with longitude before latitude. Dates use RFC3339. ID matching is exact and case-sensitive.
 
 | Method | Route | Behavior |

@@ -3,6 +3,7 @@ WORKDIR /src/web
 COPY web/package*.json ./
 RUN npm ci --no-audit --no-fund
 COPY web/ ./
+COPY internal/api/openapi.json /src/internal/api/openapi.json
 RUN npm run build
 
 FROM golang:1.25-bookworm AS build

@@ -1,0 +1,1163 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "aarde API",
+    "version": "dev",
+    "description": "Read-only imagery catalog API served by aarde. Imports are local CLI operations and are not exposed here.\n\nUse **Authorize** to enter the web token from the private token file named in the server startup log. Enter only the token, without the Bearer prefix. Swagger stores authorization in memory and clears it on reload.\n\nAll operations require authentication by default. With AARDE_WEB_PUBLIC_READ=true, registered reads including POST /api/v1/imagery/search accept anonymous requests; this served specification reflects that setting. Explicitly supplied invalid tokens are always rejected. API responses are not cached.\n\nThis reference and /openapi.json are public and contain no catalog data or credentials. Try it out sends real requests to this server."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "This aarde server"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Server",
+      "description": "Build, access state, and database readiness."
+    },
+    {
+      "name": "Catalog",
+      "description": "Catalog metadata, exact lookup, and spatial search."
+    }
+  ],
+  "paths": {
+    "/api/v1/info": {
+      "get": {
+        "operationId": "getInfo",
+        "summary": "Get build and access information",
+        "tags": [
+          "Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Info"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "description": "Available independently of database health. Authentication state describes this request."
+      },
+      "head": {
+        "operationId": "getInfoHead",
+        "summary": "Get build and access information (headers only)",
+        "tags": [
+          "Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "A valid aarde web token is required"
+          }
+        },
+        "description": "Available independently of database health. Authentication state describes this request."
+      }
+    },
+    "/api/v1/version": {
+      "get": {
+        "operationId": "getVersion",
+        "summary": "Get the running build version",
+        "tags": [
+          "Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Version"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "description": "Available independently of database health."
+      },
+      "head": {
+        "operationId": "getVersionHead",
+        "summary": "Get the running build version (headers only)",
+        "tags": [
+          "Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "A valid aarde web token is required"
+          }
+        },
+        "description": "Available independently of database health."
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Check database readiness",
+        "tags": [
+          "Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      },
+      "head": {
+        "operationId": "getHealthHead",
+        "summary": "Check database readiness (headers only)",
+        "tags": [
+          "Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "A valid aarde web token is required"
+          },
+          "503": {
+            "description": "database unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/catalogs": {
+      "get": {
+        "operationId": "listCatalogs",
+        "summary": "List catalogs containing imagery",
+        "tags": [
+          "Catalog"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Catalogs"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "head": {
+        "operationId": "listCatalogsHead",
+        "summary": "List catalogs containing imagery (headers only)",
+        "tags": [
+          "Catalog"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "A valid aarde web token is required"
+          },
+          "500": {
+            "description": "catalog request failed"
+          }
+        }
+      }
+    },
+    "/api/v1/imagery": {
+      "get": {
+        "operationId": "listImagery",
+        "summary": "List or filter imagery",
+        "tags": [
+          "Catalog"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "description": "Exact, case-sensitive IDs. Results are ordered by import time descending, then UUID. Concurrent imports can shift offset-based pages.",
+        "parameters": [
+          {
+            "name": "catalog_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact catalog ID. Omit or use an empty string for all catalogs."
+          },
+          {
+            "name": "image_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255,
+                "description": "Exact, case-sensitive ID: 1\u2013255 UTF-8 bytes, no slashes, backslashes, control characters, or surrounding whitespace."
+              },
+              "maxItems": 100
+            },
+            "description": "Repeat this query parameter for up to 100 exact image IDs.",
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            },
+            "description": "Page size; values outside 1\u2013200 are rejected."
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000,
+              "default": 0
+            },
+            "description": "Number of records to skip."
+          }
+        ]
+      },
+      "head": {
+        "operationId": "listImageryHead",
+        "summary": "List or filter imagery (headers only)",
+        "tags": [
+          "Catalog"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "A valid aarde web token is required"
+          },
+          "400": {
+            "description": "invalid limit"
+          },
+          "500": {
+            "description": "catalog request failed"
+          }
+        },
+        "description": "Exact, case-sensitive IDs. Results are ordered by import time descending, then UUID. Concurrent imports can shift offset-based pages.",
+        "parameters": [
+          {
+            "name": "catalog_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact catalog ID. Omit or use an empty string for all catalogs."
+          },
+          {
+            "name": "image_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255,
+                "description": "Exact, case-sensitive ID: 1\u2013255 UTF-8 bytes, no slashes, backslashes, control characters, or surrounding whitespace."
+              },
+              "maxItems": 100
+            },
+            "description": "Repeat this query parameter for up to 100 exact image IDs.",
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            },
+            "description": "Page size; values outside 1\u2013200 are rejected."
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000,
+              "default": 0
+            },
+            "description": "Number of records to skip."
+          }
+        ]
+      }
+    },
+    "/api/v1/imagery/{catalogID}/{imageID}": {
+      "get": {
+        "operationId": "getImagery",
+        "summary": "Get an exact imagery record",
+        "tags": [
+          "Catalog"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Imagery"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "catalogID",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "description": "Exact, case-sensitive ID: 1\u2013255 UTF-8 bytes, no slashes, backslashes, control characters, or surrounding whitespace."
+            },
+            "description": "Catalog identifier."
+          },
+          {
+            "name": "imageID",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "description": "Exact, case-sensitive ID: 1\u2013255 UTF-8 bytes, no slashes, backslashes, control characters, or surrounding whitespace."
+            },
+            "description": "Image identifier within the catalog."
+          }
+        ]
+      },
+      "head": {
+        "operationId": "getImageryHead",
+        "summary": "Get an exact imagery record (headers only)",
+        "tags": [
+          "Catalog"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "A valid aarde web token is required"
+          },
+          "400": {
+            "description": "invalid limit"
+          },
+          "404": {
+            "description": "imagery not found"
+          },
+          "500": {
+            "description": "catalog request failed"
+          }
+        },
+        "parameters": [
+          {
+            "name": "catalogID",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "description": "Exact, case-sensitive ID: 1\u2013255 UTF-8 bytes, no slashes, backslashes, control characters, or surrounding whitespace."
+            },
+            "description": "Catalog identifier."
+          },
+          {
+            "name": "imageID",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "description": "Exact, case-sensitive ID: 1\u2013255 UTF-8 bytes, no slashes, backslashes, control characters, or surrounding whitespace."
+            },
+            "description": "Image identifier within the catalog."
+          }
+        ]
+      }
+    },
+    "/api/v1/imagery/search": {
+      "post": {
+        "operationId": "searchImagery",
+        "summary": "Search imagery by polygon intersection",
+        "tags": [
+          "Catalog"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidSearch"
+          },
+          "413": {
+            "$ref": "#/components/responses/TooLarge"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "description": "Read-only search: never mutates the catalog. Indexed PostGIS ST_Intersects includes partial overlap and boundary contact and respects holes. Results use the same ordering and pagination as GET /imagery. Anonymous requests are allowed when public reads are enabled. Two-dimensional EPSG:4326 coordinates, longitude then latitude. Rings must be closed, with at least four positions each. At most 10,000 positions across the geometry. PostGIS validates topology, including self-intersections. Split antimeridian crossings into a MultiPolygon; edges spanning more than 180 degrees longitude are rejected. GeoJSON Feature and FeatureCollection wrappers are not accepted.",
+        "requestBody": {
+          "required": true,
+          "description": "One JSON object, at most 1 MiB.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchRequest"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Startup web token. Enter the token only, without the Bearer prefix."
+      }
+    },
+    "schemas": {
+      "Info": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "public_read": {
+            "type": "boolean"
+          },
+          "authenticated": {
+            "type": "boolean"
+          },
+          "read_only": {
+            "type": "boolean",
+            "const": true
+          },
+          "basemap": {
+            "type": "string",
+            "enum": [
+              "osm",
+              "none"
+            ]
+          }
+        },
+        "required": [
+          "version",
+          "public_read",
+          "authenticated",
+          "read_only",
+          "basemap"
+        ],
+        "example": {
+          "version": "dev",
+          "public_read": false,
+          "authenticated": true,
+          "read_only": true,
+          "basemap": "osm"
+        }
+      },
+      "Version": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "example": {
+          "version": "dev"
+        }
+      },
+      "Health": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ok"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "example": {
+          "status": "ok"
+        }
+      },
+      "Catalogs": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "description": "Exact, case-sensitive ID: 1\u2013255 UTF-8 bytes, no slashes, backslashes, control characters, or surrounding whitespace."
+            }
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "example": {
+          "items": [
+            "default"
+          ]
+        }
+      },
+      "Position": {
+        "type": "array",
+        "prefixItems": [
+          {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180
+          },
+          {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90
+          }
+        ],
+        "items": false,
+        "minItems": 2,
+        "maxItems": 2
+      },
+      "Polygon": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "Polygon"
+          },
+          "coordinates": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/Position"
+              },
+              "minItems": 4
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "type",
+          "coordinates"
+        ],
+        "additionalProperties": false,
+        "example": {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [
+                -106.2,
+                39.3
+              ],
+              [
+                -105.8,
+                39.3
+              ],
+              [
+                -105.8,
+                39.7
+              ],
+              [
+                -106.2,
+                39.7
+              ],
+              [
+                -106.2,
+                39.3
+              ]
+            ]
+          ]
+        }
+      },
+      "MultiPolygon": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "MultiPolygon"
+          },
+          "coordinates": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Position"
+                },
+                "minItems": 4
+              },
+              "minItems": 1
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "type",
+          "coordinates"
+        ],
+        "additionalProperties": false,
+        "example": {
+          "type": "MultiPolygon",
+          "coordinates": [
+            [
+              [
+                [
+                  -106.2,
+                  39.3
+                ],
+                [
+                  -105.8,
+                  39.3
+                ],
+                [
+                  -105.8,
+                  39.7
+                ],
+                [
+                  -106.2,
+                  39.7
+                ],
+                [
+                  -106.2,
+                  39.3
+                ]
+              ]
+            ]
+          ]
+        }
+      },
+      "Geometry": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/Polygon"
+          },
+          {
+            "$ref": "#/components/schemas/MultiPolygon"
+          }
+        ],
+        "description": "Two-dimensional EPSG:4326 coordinates, longitude then latitude. Rings must be closed, with at least four positions each. At most 10,000 positions across the geometry. PostGIS validates topology, including self-intersections. Split antimeridian crossings into a MultiPolygon; edges spanning more than 180 degrees longitude are rejected. GeoJSON Feature and FeatureCollection wrappers are not accepted.",
+        "example": {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [
+                -106.2,
+                39.3
+              ],
+              [
+                -105.8,
+                39.3
+              ],
+              [
+                -105.8,
+                39.7
+              ],
+              [
+                -106.2,
+                39.7
+              ],
+              [
+                -106.2,
+                39.3
+              ]
+            ]
+          ]
+        }
+      },
+      "SearchRequest": {
+        "type": "object",
+        "required": [
+          "geometry"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "catalog_id": {
+            "type": "string",
+            "description": "Omit or pass an empty string to search all catalogs. Otherwise use a valid catalog ID."
+          },
+          "geometry": {
+            "$ref": "#/components/schemas/Geometry"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000,
+            "default": 0
+          }
+        },
+        "example": {
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+              [
+                [
+                  -106.2,
+                  39.3
+                ],
+                [
+                  -105.8,
+                  39.3
+                ],
+                [
+                  -105.8,
+                  39.7
+                ],
+                [
+                  -106.2,
+                  39.7
+                ],
+                [
+                  -106.2,
+                  39.3
+                ]
+              ]
+            ]
+          },
+          "limit": 50,
+          "offset": 0
+        }
+      },
+      "Imagery": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "catalog_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
+            "description": "Exact, case-sensitive ID: 1\u2013255 UTF-8 bytes, no slashes, backslashes, control characters, or surrounding whitespace."
+          },
+          "image_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
+            "description": "Exact, case-sensitive ID: 1\u2013255 UTF-8 bytes, no slashes, backslashes, control characters, or surrounding whitespace."
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "acquired_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "imported_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "footprint": {
+            "$ref": "#/components/schemas/MultiPolygon"
+          },
+          "checksum": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "SHA-256 of the source file."
+          },
+          "asset_location": {
+            "type": "string",
+            "description": "Local asset path on the server; this API does not download raster files."
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "band_count": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "source_crs": {
+            "type": "string",
+            "description": "Source CRS in WKT."
+          },
+          "metadata": {
+            "description": "GDAL metadata stored as JSON."
+          }
+        },
+        "required": [
+          "id",
+          "catalog_id",
+          "image_id",
+          "display_name",
+          "acquired_at",
+          "imported_at",
+          "created_at",
+          "footprint",
+          "checksum",
+          "asset_location",
+          "width",
+          "height",
+          "band_count",
+          "source_crs",
+          "metadata"
+        ],
+        "example": {
+          "id": "c77f4d82-ef3d-44b9-b027-c6fc30b60c53",
+          "catalog_id": "default",
+          "image_id": "ABC123",
+          "display_name": "ABC123.tif",
+          "acquired_at": null,
+          "imported_at": "2026-09-27T12:00:00Z",
+          "created_at": "2026-09-27T12:00:00Z",
+          "footprint": {
+            "type": "MultiPolygon",
+            "coordinates": [
+              [
+                [
+                  [
+                    -106.2,
+                    39.3
+                  ],
+                  [
+                    -105.8,
+                    39.3
+                  ],
+                  [
+                    -105.8,
+                    39.7
+                  ],
+                  [
+                    -106.2,
+                    39.7
+                  ],
+                  [
+                    -106.2,
+                    39.3
+                  ]
+                ]
+              ]
+            ]
+          },
+          "checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "asset_location": "/data/ABC123.tif",
+          "width": 1024,
+          "height": 1024,
+          "band_count": 3,
+          "source_crs": "GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563]],PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433]]",
+          "metadata": {}
+        }
+      },
+      "SearchResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Imagery"
+            }
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000,
+            "default": 0
+          },
+          "has_more": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "items",
+          "limit",
+          "offset",
+          "has_more"
+        ],
+        "example": {
+          "items": [],
+          "limit": 50,
+          "offset": 0,
+          "has_more": false
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "example": {
+          "error": {
+            "code": "invalid_geometry",
+            "message": "search geometry must be a Polygon or MultiPolygon"
+          }
+        }
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "A valid aarde web token is required",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "unauthorized",
+                "message": "A valid aarde web token is required"
+              }
+            }
+          }
+        },
+        "headers": {
+          "WWW-Authenticate": {
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer realm=\"aarde-web\""
+          }
+        }
+      },
+      "InvalidRequest": {
+        "description": "invalid limit",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "invalid_request",
+                "message": "invalid limit"
+              }
+            }
+          }
+        }
+      },
+      "InvalidSearch": {
+        "description": "Invalid JSON (invalid_json), invalid geometry or topology (invalid_geometry), or invalid pagination/catalog ID (invalid_request). Unknown body and geometry fields and extra JSON values are rejected.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "invalid_geometry",
+                "message": "search geometry must be a Polygon or MultiPolygon"
+              }
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "imagery not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "not_found",
+                "message": "imagery not found"
+              }
+            }
+          }
+        }
+      },
+      "InternalError": {
+        "description": "catalog request failed",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "internal_error",
+                "message": "catalog request failed"
+              }
+            }
+          }
+        }
+      },
+      "Unavailable": {
+        "description": "database unavailable",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "unavailable",
+                "message": "database unavailable"
+              }
+            }
+          }
+        }
+      },
+      "TooLarge": {
+        "description": "request body exceeds 1 MiB",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "body_too_large",
+                "message": "request body exceeds 1 MiB"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

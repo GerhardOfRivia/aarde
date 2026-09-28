@@ -59,6 +59,12 @@ type VersionResponse struct {
 }
 
 func Routes(service *catalog.Service, version string, access Access, basemap string) http.Handler {
+	router, _ := routes(service, version, access, basemap)
+	return router
+}
+
+// Return the same read allowlist used by authentication to render the API docs.
+func routes(service *catalog.Service, version string, access Access, basemap string) (chi.Router, map[string]bool) {
 	h := Handler{catalog: service}
 	r := chi.NewRouter()
 	reads := make(map[string]bool)
@@ -89,7 +95,7 @@ func Routes(service *catalog.Service, version string, access Access, basemap str
 	r.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
 		Error(w, 405, "method_not_allowed", "method not allowed")
 	})
-	return r
+	return r, reads
 }
 func JSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")

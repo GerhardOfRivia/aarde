@@ -45,6 +45,6 @@ release:
 	git push origin "$(RELEASE_TAG)"
 
 clean:
-	rm -f 
+	rm -f ./bin/aarde
 	rm -rf ./web/node_modules ./web/tsconfig.app.tsbuildinfo ./web/tsconfig.node.tsbuildinfo
 

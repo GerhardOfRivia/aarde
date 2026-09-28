@@ -36,6 +36,7 @@ func Handler(service *catalog.Service, version string, access api.Access, basema
 	r.Handle("/api", access.Protect(http.HandlerFunc(apiNotFound)))
 	r.Handle("/api/*", access.Protect(http.HandlerFunc(apiNotFound)))
 	assets := web.Assets()
+	registerDocs(r, assets, version, access)
 	files := http.FileServer(http.FS(assets))
 	r.Get("/*", func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
