@@ -55,23 +55,28 @@ jobs:
           printf '%s\n' "$version"
           test "$version" = "aarde $RELEASE_TAG"
 
-      - name: Save image and checksum
+      - name: Save image, release Compose file, and checksums
         env:
           IMAGE_TAG: ${{ steps.image.outputs.tag }}
         run: |
           mkdir -p release
+          # Release installs load the image archive; no source checkout is needed.
+          sed "s|^    build: \.$|    image: aarde:${IMAGE_TAG}\n    pull_policy: never|" docker-compose.yml > release/docker-compose.yml
+          docker compose -f release/docker-compose.yml config --quiet
           cd release
           archive="aarde-${IMAGE_TAG}-linux-amd64.tar"
           docker image save --output "$archive" "aarde:$IMAGE_TAG"
           sha256sum "$archive" > "$archive.sha256"
           sha256sum --check "$archive.sha256"
+          sha256sum docker-compose.yml > docker-compose.yml.sha256
+          sha256sum --check docker-compose.yml.sha256
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          gh release create "$RELEASE_TAG" release/*.tar release/*.sha256 \
+          gh release create "$RELEASE_TAG" release/*.tar release/*.sha256 release/docker-compose.yml \
             --verify-tag \
             --title "$RELEASE_TAG" \
             --generate-notes
