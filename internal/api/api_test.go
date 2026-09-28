@@ -1,6 +1,8 @@
 package api
 
 import (
+	"encoding/json"
+	"github.com/GerhardOfRivia/aarde/internal/catalog"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -39,5 +41,23 @@ func TestValidation(t *testing.T) {
 				t.Fatal("expected structured error")
 			}
 		})
+	}
+}
+
+func TestCloudCoverResponse(t *testing.T) {
+	zero, fraction := 0.0, 12.5
+	for _, cover := range []*float64{nil, &zero, &fraction} {
+		data, err := json.Marshal(Response(catalog.Imagery{CloudCover: cover}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var body map[string]any
+		if err := json.Unmarshal(data, &body); err != nil {
+			t.Fatal(err)
+		}
+		got, present := body["cloud_cover"]
+		if !present || cover == nil && got != nil || cover != nil && got != *cover {
+			t.Fatalf("cloud_cover serialized incorrectly: %s", data)
+		}
 	}
 }

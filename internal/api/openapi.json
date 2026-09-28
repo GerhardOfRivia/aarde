@@ -904,6 +904,15 @@
           },
           "metadata": {
             "description": "GDAL metadata stored as JSON."
+          },
+          "cloud_cover": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Cloud-cover percentage; null when unknown."
           }
         },
         "required": [
@@ -921,7 +930,8 @@
           "height",
           "band_count",
           "source_crs",
-          "metadata"
+          "metadata",
+          "cloud_cover"
         ],
         "example": {
           "id": "c77f4d82-ef3d-44b9-b027-c6fc30b60c53",
@@ -966,7 +976,8 @@
           "height": 1024,
           "band_count": 3,
           "source_crs": "GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563]],PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433]]",
-          "metadata": {}
+          "metadata": {},
+          "cloud_cover": null
         }
       },
       "SearchResponse": {

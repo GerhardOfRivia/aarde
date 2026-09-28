@@ -30,3 +30,14 @@ func TestVersionWithoutDatabase(t *testing.T) {
 		t.Fatal("missing version")
 	}
 }
+
+func TestInvalidCloudCoverFlag(t *testing.T) {
+	t.Setenv("AARDE_DATABASE_URL", "")
+	for _, value := range []string{"-1", "101", "NaN", "+Inf", "-Inf", "bad", ""} {
+		var out strings.Builder
+		err := run(context.Background(), []string{"import", "missing.tif", "--dry-run", "--cloud-cover=" + value}, &out)
+		if err == nil || !strings.Contains(err.Error(), "cloud cover") {
+			t.Errorf("value %q: %v", value, err)
+		}
+	}
+}

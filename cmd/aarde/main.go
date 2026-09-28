@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -28,7 +29,7 @@ const usage = `Aarde — local imagery, spatial discovery
 
 Usage:
   aarde serve
-  aarde import <file-or-directory> [--recursive] [--dry-run] [--catalog default]
+  aarde import <file-or-directory> [--recursive] [--dry-run] [--catalog default] [--cloud-cover percent]
   aarde inspect <image.tif>
   aarde search --id <exact-ID> [--catalog default] [--limit 50] [--offset 0]
   aarde version
@@ -112,6 +113,17 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		flags.StringVar(&opts.Catalog, "catalog", "default", "catalog ID")
 		flags.BoolVar(&opts.Recursive, "recursive", false, "walk child directories")
 		flags.BoolVar(&opts.DryRun, "dry-run", false, "inspect without database writes")
+		flags.Func("cloud-cover", "cloud-cover percentage (0–100); overrides metadata for all imported files", func(raw string) error {
+			value, err := strconv.ParseFloat(raw, 64)
+			if err != nil {
+				return errors.New("cloud cover must be a number between 0 and 100")
+			}
+			if err := catalog.ValidateCloudCover(&value); err != nil {
+				return err
+			}
+			opts.CloudCover = &value
+			return nil
+		})
 		if err := parse(flags, args[1:]); err != nil {
 			if errors.Is(err, flag.ErrHelp) {
 				return nil
@@ -119,7 +131,7 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 			return err
 		}
 		if flags.NArg() != 1 {
-			return errors.New("usage: aarde import <path> [--recursive] [--dry-run] [--catalog default]")
+			return errors.New("usage: aarde import <path> [--recursive] [--dry-run] [--catalog default] [--cloud-cover percent]")
 		}
 		var service *catalog.Service
 		if !opts.DryRun || cfg.DatabaseURL != "" {

@@ -7,6 +7,7 @@ export interface Imagery {
   image_id: string;
   display_name: string;
   acquired_at: string | null;
+  cloud_cover: number | null;
   imported_at: string;
   created_at: string;
   footprint: Area;

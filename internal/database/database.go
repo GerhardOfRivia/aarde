@@ -100,12 +100,12 @@ END $$`); err != nil {
 }
 
 const columns = `id, catalog_id, image_id, display_name, acquired_at, imported_at,
-ST_AsGeoJSON(footprint, 15), checksum, asset_location, width, height, band_count, source_crs, metadata, created_at`
+ST_AsGeoJSON(footprint, 15), checksum, asset_location, width, height, band_count, source_crs, metadata, created_at, cloud_cover`
 
 func scan(row pgx.Row) (catalog.Imagery, error) {
 	var i catalog.Imagery
 	var geometry []byte
-	err := row.Scan(&i.ID, &i.CatalogID, &i.ImageID, &i.DisplayName, &i.AcquiredAt, &i.ImportedAt, &geometry, &i.Checksum, &i.AssetLocation, &i.Width, &i.Height, &i.BandCount, &i.SourceCRS, &i.Metadata, &i.CreatedAt)
+	err := row.Scan(&i.ID, &i.CatalogID, &i.ImageID, &i.DisplayName, &i.AcquiredAt, &i.ImportedAt, &geometry, &i.Checksum, &i.AssetLocation, &i.Width, &i.Height, &i.BandCount, &i.SourceCRS, &i.Metadata, &i.CreatedAt, &i.CloudCover)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return i, catalog.ErrNotFound
 	}
@@ -145,9 +145,9 @@ func (r *Repository) Insert(ctx context.Context, i catalog.Imagery) (catalog.Ima
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	row, err := scan(r.pool.QueryRow(ctx, `INSERT INTO imagery
-(id,catalog_id,image_id,display_name,acquired_at,imported_at,footprint,checksum,asset_location,width,height,band_count,source_crs,metadata,created_at)
-VALUES ($1,$2,$3,$4,$5,$6,ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON($7),4326)),$8,$9,$10,$11,$12,$13,$14,$15)
-ON CONFLICT DO NOTHING RETURNING `+columns, i.ID, i.CatalogID, i.ImageID, i.DisplayName, i.AcquiredAt, i.ImportedAt, string(i.Footprint.JSON()), i.Checksum, i.AssetLocation, i.Width, i.Height, i.BandCount, i.SourceCRS, i.Metadata, i.CreatedAt))
+(id,catalog_id,image_id,display_name,acquired_at,imported_at,footprint,checksum,asset_location,width,height,band_count,source_crs,metadata,created_at,cloud_cover)
+VALUES ($1,$2,$3,$4,$5,$6,ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON($7),4326)),$8,$9,$10,$11,$12,$13,$14,$15,$16)
+ON CONFLICT DO NOTHING RETURNING `+columns, i.ID, i.CatalogID, i.ImageID, i.DisplayName, i.AcquiredAt, i.ImportedAt, string(i.Footprint.JSON()), i.Checksum, i.AssetLocation, i.Width, i.Height, i.BandCount, i.SourceCRS, i.Metadata, i.CreatedAt, i.CloudCover))
 	if !errors.Is(err, catalog.ErrNotFound) {
 		return row, false, err
 	}

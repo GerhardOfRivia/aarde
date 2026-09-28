@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"math"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -274,7 +276,7 @@ func TestGeoTIFFImportIntegration(t *testing.T) {
 	scene := filepath.Join(dir, "scene.tif")
 	create := func(path, crs string, bounds []string) {
 		t.Helper()
-		args := []string{"-of", "GTiff", "-outsize", "10", "10", "-bands", "1", "-burn", "42", "-a_srs", crs, "-a_ullr"}
+		args := []string{"-of", "GTiff", "-outsize", "10", "10", "-bands", "1", "-burn", "42", "-mo", "CLOUD_COVER=12.5", "-a_srs", crs, "-a_ullr"}
 		args = append(args, bounds...)
 		args = append(args, path)
 		if out, err := exec.CommandContext(ctx, "gdal_create", args...).CombinedOutput(); err != nil {
@@ -292,8 +294,25 @@ func TestGeoTIFFImportIntegration(t *testing.T) {
 		t.Fatalf("single import: %+v %v", s, err)
 	}
 	i, err := service.Get(ctx, cat, "scene")
-	if err != nil || i.AcquiredAt != nil || i.Width != 10 || i.AssetLocation != scene {
+	if err != nil || i.AcquiredAt != nil || i.Width != 10 || i.AssetLocation != scene || i.CloudCover == nil || *i.CloudCover != 12.5 {
 		t.Fatalf("imported model: %+v %v", i, err)
+	}
+	zero := 0.0
+	s, err = runner.Run(ctx, scene, importer.Options{Catalog: cat + "-override", CloudCover: &zero})
+	if err != nil || s.Imported != 1 {
+		t.Fatalf("override import: %+v %v", s, err)
+	}
+	overridden, err := service.Get(ctx, cat+"-override", "scene")
+	if err != nil || overridden.CloudCover == nil || *overridden.CloudCover != 0 {
+		t.Fatalf("override lost: %+v %v", overridden, err)
+	}
+	s, err = runner.Run(ctx, scene, importer.Options{Catalog: cat, CloudCover: &zero})
+	if err != nil || s.Existing != 1 {
+		t.Fatalf("duplicate: %+v %v", s, err)
+	}
+	original, err := service.Get(ctx, cat, "scene")
+	if err != nil || original.CloudCover == nil || *original.CloudCover != 12.5 {
+		t.Fatal("duplicate changed cloud cover")
 	}
 	if err := os.Mkdir(filepath.Join(dir, "nested"), 0755); err != nil {
 		t.Fatal(err)
@@ -346,5 +365,45 @@ func TestGeoTIFFImportIntegration(t *testing.T) {
 	sum := sha256.Sum256(before)
 	if string(before) != string(after) || inspection.Checksum != hex.EncodeToString(sum[:]) {
 		t.Fatal("source changed or checksum incorrect")
+	}
+}
+
+func TestCloudCoverPersistence(t *testing.T) {
+	ctx, repo, service, cat := testDB(t)
+	zero, fraction, full := 0.0, 12.5, 100.0
+	for n, cover := range []*float64{nil, &zero, &fraction, &full} {
+		i := model(t, cat, fmt.Sprintf("cloud-%d", n), rectangle)
+		i.CloudCover = cover
+		saved, _, err := service.Import(ctx, i)
+		if err != nil {
+			t.Fatal(err)
+		}
+		check := func(got catalog.Imagery) {
+			t.Helper()
+			if (got.CloudCover == nil) != (cover == nil) || cover != nil && *got.CloudCover != *cover {
+				t.Fatalf("cloud cover lost: %+v", got)
+			}
+		}
+		check(saved)
+		got, err := service.Get(ctx, cat, i.ImageID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		check(got)
+		got, err = repo.ByChecksum(ctx, cat, i.Checksum)
+		if err != nil {
+			t.Fatal(err)
+		}
+		check(got)
+		page, err := service.Search(ctx, catalog.Query{CatalogID: cat, ImageIDs: []string{i.ImageID}})
+		if err != nil || len(page.Items) != 1 {
+			t.Fatalf("search: %+v %v", page, err)
+		}
+		check(page.Items[0])
+		for _, invalid := range []float64{-1, 100.01, math.NaN(), math.Inf(1), math.Inf(-1)} {
+			if _, err := repo.pool.Exec(ctx, "UPDATE imagery SET cloud_cover=$1 WHERE id=$2", invalid, saved.ID); err == nil {
+				t.Fatalf("database accepted %v", invalid)
+			}
+		}
 	}
 }

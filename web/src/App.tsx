@@ -450,6 +450,10 @@ function CatalogApp({ session }: { session: Session }) {
                 <dd>{date(selected.acquired_at)}</dd>
               </div>
               <div>
+                <dt>Cloud cover</dt>
+                <dd>{selected.cloud_cover == null ? "Unknown" : `${selected.cloud_cover}%`}</dd>
+              </div>
+              <div>
                 <dt>Imported</dt>
                 <dd>{date(selected.imported_at)}</dd>
               </div>

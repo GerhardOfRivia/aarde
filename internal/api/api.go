@@ -25,6 +25,7 @@ type ImageryResponse struct {
 	ImageID       string          `json:"image_id"`
 	DisplayName   string          `json:"display_name"`
 	AcquiredAt    *time.Time      `json:"acquired_at"`
+	CloudCover    *float64        `json:"cloud_cover"`
 	ImportedAt    time.Time       `json:"imported_at"`
 	CreatedAt     time.Time       `json:"created_at"`
 	Footprint     geo.Geometry    `json:"footprint"`
@@ -44,7 +45,7 @@ type SearchResponse struct {
 }
 
 func Response(i catalog.Imagery) ImageryResponse {
-	return ImageryResponse{ID: i.ID.String(), CatalogID: i.CatalogID, ImageID: i.ImageID, DisplayName: i.DisplayName, AcquiredAt: i.AcquiredAt, ImportedAt: i.ImportedAt, CreatedAt: i.CreatedAt, Footprint: i.Footprint, Checksum: i.Checksum, AssetLocation: i.AssetLocation, Width: i.Width, Height: i.Height, BandCount: i.BandCount, SourceCRS: i.SourceCRS, Metadata: i.Metadata}
+	return ImageryResponse{ID: i.ID.String(), CatalogID: i.CatalogID, ImageID: i.ImageID, DisplayName: i.DisplayName, AcquiredAt: i.AcquiredAt, CloudCover: i.CloudCover, ImportedAt: i.ImportedAt, CreatedAt: i.CreatedAt, Footprint: i.Footprint, Checksum: i.Checksum, AssetLocation: i.AssetLocation, Width: i.Width, Height: i.Height, BandCount: i.BandCount, SourceCRS: i.SourceCRS, Metadata: i.Metadata}
 }
 func PageResponse(p catalog.Page) SearchResponse {
 	out := SearchResponse{Items: []ImageryResponse{}, Limit: p.Limit, Offset: p.Offset, HasMore: p.HasMore}

@@ -127,6 +127,7 @@ aarde version
 aarde inspect image.tif
 
 aarde import image.tif
+aarde import image.tif --cloud-cover 12.5
 aarde import ./imagery
 aarde import ./imagery --recursive
 aarde import ./imagery --recursive --catalog breckenridge
@@ -137,7 +138,7 @@ aarde search --id ABC123,IMG002 --catalog breckenridge
 aarde search --id ABC123 --limit 50 --offset 0
 ```
 
-Flags may precede or follow the import path. `inspect` prints JSON with format, source CRS (WKT), source corners, width, height, band count, acquisition time, calculated EPSG:4326 footprint, SHA-256 checksum, asset path, and metadata. It does not need a database.
+Flags may precede or follow the import path. `inspect` prints JSON with format, source CRS (WKT), source corners, width, height, band count, acquisition time, cloud-cover percentage, calculated EPSG:4326 footprint, SHA-256 checksum, asset path, and metadata. It does not need a database.
 
 Imports catalog existing files without copying or changing them. Absolute paths identify assets; within Docker those are container paths, so preserve the mount layout when moving a deployment. Raster bytes are never put into PostgreSQL. `asset_location` is independent of imagery identity so managed storage can be added later. No `--copy` option is implemented.
 
@@ -155,6 +156,8 @@ The initial image ID is the filename without its extension, derived in `importer
 Within a catalog, the same checksum reports **already imported** and keeps the original record and asset path. An existing image ID with different bytes is a conflict, never an overwrite. The same bytes may be cataloged independently in another catalog. SHA-256 covers raster bytes, not external sidecar metadata. Concurrent duplicate imports are also protected by database constraints.
 
 Dry run discovers, inspects, checksums, validates, derives IDs, and reports **would import**, with a separate `Would import` count. With `AARDE_DATABASE_URL`, it checks stored duplicates and PostGIS topology using read-only queries. The schema must already exist. With no URL, it works offline and clearly reports that database duplicates and topology were not checked; in-batch duplicates are still detected. It never migrates or writes to the database.
+
+Cloud cover is an optional percentage from 0 to 100; `0` means clear and `NULL` means unknown. The inspector reads numeric values from `CLOUD_COVER`, `CLOUD_COVER_PERCENTAGE`, and `EO:CLOUD_COVER` (case-insensitive, in that priority order) in GDAL metadata domains. Missing, non-finite, or out-of-range metadata values stay unknown. `aarde import <path> --cloud-cover 12.5` overrides metadata for every file in that import, including during dry runs. Duplicate imports keep the original record and cloud cover. Existing rows remain unknown after migration; cloud cover is not calculated from pixels.
 
 Acquisition time is separate from import/creation time. The inspector recognizes timezone-qualified RFC3339 values under `ACQUISITION_DATETIME`, `ACQUISITION_TIME`, `SENSING_TIME`, and `TIFFTAG_DATETIME_ORIGINAL` (case-insensitive) in GDAL metadata domains. Missing or ambiguous times remain `NULL`. Generic `TIFFTAG_DATETIME`, filesystem modification time, and import time are not used as acquisition time.
 
@@ -208,7 +211,7 @@ Database/SQL details are logged server-side and not sent to clients. HTTP header
 
 ## Database schema
 
-The SQL source is [`migrations/001_initial.sql`](migrations/001_initial.sql).
+The SQL source is in [`migrations/`](migrations/). Startup and normal imports apply pending migrations automatically; existing rows receive `NULL` for newly added cloud cover.
 
 | Column | Type / meaning |
 | --- | --- |
@@ -216,6 +219,7 @@ The SQL source is [`migrations/001_initial.sql`](migrations/001_initial.sql).
 | `catalog_id`, `image_id` | Catalog-scoped identity |
 | `display_name` | Original filename |
 | `acquired_at` | Nullable acquisition timestamp |
+| `cloud_cover` | Nullable cloud-cover percentage (0–100) |
 | `imported_at`, `created_at` | Catalog timestamps |
 | `footprint` | Valid, nonempty `geometry(MultiPolygon,4326)` |
 | `checksum` | Lowercase SHA-256 |

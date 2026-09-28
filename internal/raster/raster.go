@@ -10,10 +10,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,6 +30,7 @@ type Inspection struct {
 	Height        int                  `json:"height"`
 	BandCount     int                  `json:"band_count"`
 	AcquiredAt    *time.Time           `json:"acquired_at"`
+	CloudCover    *float64             `json:"cloud_cover"`
 	Footprint     geo.Geometry         `json:"footprint"`
 	Checksum      string               `json:"checksum"`
 	AssetLocation string               `json:"asset_location"`
@@ -156,7 +159,7 @@ func ParseInfo(data []byte) (Inspection, error) {
 	if raw.Metadata == nil {
 		metadata = []byte("{}")
 	}
-	result = Inspection{Format: raw.Driver, SourceCRS: raw.CRS.WKT, Bounds: raw.Corners, Width: raw.Size[0], Height: raw.Size[1], BandCount: len(raw.Bands), AcquiredAt: acquisitionTime(raw.Metadata), Footprint: footprint, Metadata: metadata}
+	result = Inspection{Format: raw.Driver, SourceCRS: raw.CRS.WKT, Bounds: raw.Corners, Width: raw.Size[0], Height: raw.Size[1], BandCount: len(raw.Bands), AcquiredAt: acquisitionTime(raw.Metadata), CloudCover: cloudCover(raw.Metadata), Footprint: footprint, Metadata: metadata}
 	return result, nil
 }
 
@@ -180,6 +183,34 @@ func acquisitionTime(metadata map[string]map[string]string) *time.Time {
 					if t, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(metadata[domain][k])); err == nil {
 						utc := t.UTC()
 						return &utc
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// Read explicitly named percentage fields only; missing or invalid values stay unknown.
+// Key priority and sorted domains/keys keep conflicting metadata deterministic.
+func cloudCover(metadata map[string]map[string]string) *float64 {
+	domains := make([]string, 0, len(metadata))
+	for domain := range metadata {
+		domains = append(domains, domain)
+	}
+	sort.Strings(domains)
+	for _, key := range []string{"CLOUD_COVER", "CLOUD_COVER_PERCENTAGE", "EO:CLOUD_COVER"} {
+		for _, domain := range domains {
+			keys := make([]string, 0, len(metadata[domain]))
+			for k := range metadata[domain] {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				if strings.EqualFold(k, key) {
+					value, err := strconv.ParseFloat(strings.TrimSpace(metadata[domain][k]), 64)
+					if err == nil && !math.IsNaN(value) && value >= 0 && value <= 100 {
+						return &value
 					}
 				}
 			}

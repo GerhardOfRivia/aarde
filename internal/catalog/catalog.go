@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -24,6 +25,7 @@ type Imagery struct {
 	ID                                 uuid.UUID
 	CatalogID, ImageID, DisplayName    string
 	AcquiredAt                         *time.Time
+	CloudCover                         *float64 // Percentage from 0 to 100; nil means unknown.
 	ImportedAt, CreatedAt              time.Time
 	Footprint                          geo.Geometry
 	Checksum, AssetLocation, SourceCRS string
@@ -116,7 +118,17 @@ func (s *Service) Search(ctx context.Context, q Query) (Page, error) {
 	return s.store.Search(ctx, q)
 }
 
+func ValidateCloudCover(value *float64) error {
+	if value != nil && (math.IsNaN(*value) || *value < 0 || *value > 100) {
+		return errors.New("cloud cover must be a finite percentage between 0 and 100")
+	}
+	return nil
+}
+
 func ValidateImagery(i Imagery) error {
+	if err := ValidateCloudCover(i.CloudCover); err != nil {
+		return err
+	}
 	if err := ValidateName(i.CatalogID); err != nil {
 		return fmt.Errorf("catalog: %w", err)
 	}

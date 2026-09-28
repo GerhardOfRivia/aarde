@@ -48,6 +48,12 @@ func TestRenamePreservesMigrationHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := repo.pool.Exec(ctx, "ALTER TABLE "+identifier+".imagery DROP COLUMN cloud_cover"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.pool.Exec(ctx, "DELETE FROM aarde_migrations WHERE name='002_cloud_cover.sql'"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := repo.pool.Exec(ctx, "ALTER TABLE "+identifier+".aarde_migrations RENAME TO ruimte_migrations"); err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +63,7 @@ func TestRenamePreservesMigrationHistory(t *testing.T) {
 		}
 	}
 	after, err := service.Get(ctx, cat, "preserved")
-	if err != nil || before.ID != after.ID {
+	if err != nil || before.ID != after.ID || after.CloudCover != nil {
 		t.Fatalf("catalog record was not preserved: %v", err)
 	}
 	var oldGone, newExists bool

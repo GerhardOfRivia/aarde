@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"strings"
 	"testing"
 
@@ -33,5 +34,21 @@ func TestDuplicateCommittedBetweenReads(t *testing.T) {
 	_, existing, err := service.Import(context.Background(), i)
 	if err != nil || !existing {
 		t.Fatalf("concurrent duplicate was treated as a conflict: %v %v", existing, err)
+	}
+}
+
+func TestValidateCloudCover(t *testing.T) {
+	if err := ValidateCloudCover(nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []float64{0, 0.5, 12.5, 100} {
+		if err := ValidateCloudCover(&value); err != nil {
+			t.Errorf("rejected %v: %v", value, err)
+		}
+	}
+	for _, value := range []float64{-1, 100.01, math.NaN(), math.Inf(1), math.Inf(-1)} {
+		if err := ValidateImagery(Imagery{CloudCover: &value}); err == nil || !strings.Contains(err.Error(), "cloud cover") {
+			t.Errorf("accepted %v: %v", value, err)
+		}
 	}
 }
