@@ -1,0 +1,77 @@
+name: Release Docker image
+
+on:
+  push:
+    tags:
+      - '**'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: docker-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v6
+
+      - name: Prepare image tag
+        id: image
+        shell: bash
+        run: |
+          # Git tags may contain characters Docker image tags cannot use.
+          image_tag=$(printf '%s' "$RELEASE_TAG" | sed -E 's/[^a-zA-Z0-9_.-]+/-/g; s/^[.-]/_/')
+          printf 'tag=%s\n' "${image_tag:0:128}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build runtime image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: runtime
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: aarde:${{ steps.image.outputs.tag }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Check container version
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
+        run: |
+          version=$(docker run --rm "aarde:$IMAGE_TAG" version)
+          printf '%s\n' "$version"
+          test "$version" = "aarde $RELEASE_TAG"
+
+      - name: Save image and checksum
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
+        run: |
+          mkdir -p release
+          cd release
+          archive="aarde-${IMAGE_TAG}-linux-amd64.tar"
+          docker image save --output "$archive" "aarde:$IMAGE_TAG"
+          sha256sum "$archive" > "$archive.sha256"
+          sha256sum --check "$archive.sha256"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "$RELEASE_TAG" release/*.tar release/*.sha256 \
+            --verify-tag \
+            --title "$RELEASE_TAG" \
+            --generate-notes
