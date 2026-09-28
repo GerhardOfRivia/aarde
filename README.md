@@ -6,7 +6,7 @@ and discover your collection spatially through a web map.
 
 One Go application provides the CLI, HTTP API, and embedded React/OpenLayers UI. GeoTIFFs stay where they are; the catalog stores metadata, SHA-256 checksums, local asset paths, and WGS84 footprints. Licensed under [MIT](LICENSE).
 
-> **Screenshot placeholder:** the map with an orange search area, green matching footprints, a blue selected footprint, and imagery details below.
+![screenshot](screenshot.png)
 
 ## Five-minute workflow
 
@@ -258,3 +258,5 @@ make integration
 Alternatively, set `AARDE_TEST_DATABASE_URL` to a dedicated PostGIS database and install GDAL locally before `go test -race -count=1 ./...`. Tests migrate that database, use unique catalog names, and remove their own records. Never point tests at a production database.
 
 Integration tests generate small real GeoTIFFs in EPSG:4326 and EPSG:32613. They cover single/recursive imports, unsupported and corrupt files, missing acquisition time, duplicate checksums, ID conflicts, concurrent imports, source preservation, dry run, exact/unknown IDs, multiple catalogs, pagination, actual polygon intersection (including bounding-box false positives), partial overlap, boundary contact, MultiPolygons, invalid topology, and real HTTP requests. Unit tests cover geometry/request limits, GDAL JSON parsing, discovery, offline dry run, and CLI flags. No PostGIS mocks are used for spatial correctness.
+
+![icon](icon.png)
