@@ -12,7 +12,7 @@ import type { Session } from "./Access";
 import { MapCanvas } from "./MapCanvas";
 import { GeoJSONInput } from "./GeoJSONInput";
 import type { MapHandle } from "./MapCanvas";
-import { APIError, request, search } from "./types";
+import { APIError, parseCloudCoverLT, request, search } from "./types";
 import type { Area, Basemap, Imagery, Page, Search } from "./types";
 
 const basemapKey = "aarde.web.basemap";
@@ -42,6 +42,7 @@ function CatalogApp({ session }: { session: Session }) {
     active = useRef<AbortController | null>(null);
   const [catalogs, setCatalogs] = useState<string[]>([]),
     [catalog, setCatalog] = useState("");
+  const [cloudCoverLT, setCloudCoverLT] = useState("");
   const [ids, setIDs] = useState(""),
     [page, setPage] = useState<Page>(empty);
   const [selected, setSelected] = useState<Imagery | null>(null),
@@ -117,9 +118,16 @@ function CatalogApp({ session }: { session: Session }) {
     setSelected(null);
     setError("");
   }
+  function apply(next: Search) {
+    try {
+      void run({ ...next, cloudCoverLT: parseCloudCoverLT(cloudCoverLT) });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Invalid scene cloud cover.");
+    }
+  }
   function areaSearch() {
     const geometry = map.current?.area();
-    if (geometry) void run({ catalog, geometry });
+    if (geometry) apply({ catalog, geometry });
   }
   function select(id: string) {
     setSelected(page.items.find((item) => item.id === id) ?? null);
@@ -162,7 +170,7 @@ function CatalogApp({ session }: { session: Session }) {
               .split(/[\n,]+/)
               .map((id) => id.trim())
               .filter(Boolean);
-            if (imageIDs.length) void run({ catalog, ids: imageIDs });
+            if (imageIDs.length) apply({ catalog, ids: imageIDs });
           }}
         >
           <TextField
@@ -181,6 +189,17 @@ function CatalogApp({ session }: { session: Session }) {
             ))}
           </TextField>
           <TextField
+            label="Scene cloud cover less than (%)"
+            type="number"
+            placeholder="Any"
+            size="small"
+            value={cloudCoverLT}
+            onChange={(e) => setCloudCoverLT(e.target.value)}
+            slotProps={{ htmlInput: { min: 0, max: 100, step: "any" }, inputLabel: { shrink: true } }}
+            className="cloud-cover-input"
+            helperText="Unknown cloud cover is excluded when filtering. Describes the whole scene, not the selected area."
+          />
+          <TextField
             label="Exact image ID"
             placeholder="ABC123, IMG002"
             size="small"
@@ -196,7 +215,7 @@ function CatalogApp({ session }: { session: Session }) {
           >
             Search ID
           </Button>
-          <Button onClick={() => void run({ catalog })} disabled={loading}>
+          <Button onClick={() => apply({ catalog })} disabled={loading}>
             Browse all
           </Button>
         </form>
@@ -233,6 +252,7 @@ function CatalogApp({ session }: { session: Session }) {
                 size="small"
                 onClick={() => {
                   map.current?.clear();
+                  setCloudCoverLT("");
                   setMode("");
                   setAreaChanged(true);
                 }}
@@ -338,6 +358,7 @@ function CatalogApp({ session }: { session: Session }) {
                 ? "Exact ID matches"
                 : "Browsing imagery"}
             {criteria.catalog ? ` · ${criteria.catalog}` : " · All catalogs"}
+            {criteria.cloudCoverLT !== undefined ? ` · Scene cloud cover < ${criteria.cloudCoverLT}%` : ""}
           </div>
           <div className="results-scroll" aria-busy={loading}>
             {!page.items.length ? (
@@ -346,16 +367,16 @@ function CatalogApp({ session }: { session: Session }) {
                 <h3>
                   {loading
                     ? "Searching the catalog…"
-                    : criteria.geometry || criteria.ids
+                    : criteria.geometry || criteria.ids || criteria.cloudCoverLT !== undefined
                       ? "No matching imagery"
                       : "Your map starts here"}
                 </h3>
                 <p>
-                  {criteria.geometry || criteria.ids
-                    ? "Try another area, image ID, or catalog."
+                  {criteria.geometry || criteria.ids || criteria.cloudCoverLT !== undefined
+                    ? "Try another area, image ID, catalog, or cloud-cover threshold."
                     : "Import local GeoTIFFs to discover your collection on the map."}
                 </p>
-                {!criteria.geometry && !criteria.ids && (
+                {!criteria.geometry && !criteria.ids && criteria.cloudCoverLT === undefined && (
                   <code>aarde import ./data --recursive</code>
                 )}
               </div>

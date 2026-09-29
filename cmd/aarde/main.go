@@ -31,7 +31,7 @@ Usage:
   aarde serve
   aarde import <file-or-directory> [--recursive] [--dry-run] [--catalog default] [--cloud-cover percent]
   aarde inspect <image.tif>
-  aarde search --id <exact-ID> [--catalog default] [--limit 50] [--offset 0]
+  aarde search --id <exact-ID> [--catalog default] [--cloud-cover-lt percent] [--limit 50] [--offset 0]
   aarde version
 
 Set AARDE_DATABASE_URL for serve, import, and search.
@@ -158,28 +158,11 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		}
 		return err
 	case "search":
-		flags := flag.NewFlagSet("search", flag.ContinueOnError)
-		flags.SetOutput(out)
-		var ids string
-		q := catalog.Query{}
-		flags.StringVar(&ids, "id", "", "exact image ID, or comma-separated IDs")
-		flags.StringVar(&q.CatalogID, "catalog", "default", "catalog ID")
-		flags.IntVar(&q.Limit, "limit", 50, "page size (1–200)")
-		flags.IntVar(&q.Offset, "offset", 0, "pagination offset")
-		if err := parse(flags, args[1:]); err != nil {
-			if errors.Is(err, flag.ErrHelp) {
-				return nil
-			}
-			return err
+		q, err := parseSearchQuery(args[1:], out)
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
 		}
-		if flags.NArg() != 0 || ids == "" {
-			return errors.New("usage: aarde search --id <exact-ID> [--catalog default]")
-		}
-		q.ImageIDs = strings.Split(ids, ",")
-		for i := range q.ImageIDs {
-			q.ImageIDs[i] = strings.TrimSpace(q.ImageIDs[i])
-		}
-		if err := catalog.NormalizeQuery(&q); err != nil {
+		if err != nil {
 			return err
 		}
 		db, err := open(false)
@@ -195,6 +178,39 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	default:
 		return fmt.Errorf("unknown command %q; run aarde --help", args[0])
 	}
+}
+
+func parseSearchQuery(args []string, out io.Writer) (catalog.Query, error) {
+	flags := flag.NewFlagSet("search", flag.ContinueOnError)
+	flags.SetOutput(out)
+	var ids string
+	q := catalog.Query{}
+	flags.StringVar(&ids, "id", "", "exact image ID, or comma-separated IDs")
+	flags.StringVar(&q.CatalogID, "catalog", "default", "catalog ID")
+	flags.IntVar(&q.Limit, "limit", 50, "page size (1–200)")
+	flags.IntVar(&q.Offset, "offset", 0, "pagination offset")
+	flags.Func("cloud-cover-lt", "scene cloud cover strictly less than this percentage (0–100); excludes unknown values; not selected-area cloud cover", func(raw string) error {
+		value, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			return errors.New("cloud_cover_lt must be a finite number between 0 and 100")
+		}
+		if err := catalog.ValidateCloudCover(&value); err != nil {
+			return fmt.Errorf("cloud_cover_lt: %w", err)
+		}
+		q.CloudCoverLT = &value
+		return nil
+	})
+	if err := parse(flags, args); err != nil {
+		return q, err
+	}
+	if flags.NArg() != 0 || ids == "" {
+		return q, errors.New("usage: aarde search --id <exact-ID> [--catalog default] [--cloud-cover-lt percent]")
+	}
+	q.ImageIDs = strings.Split(ids, ",")
+	for i := range q.ImageIDs {
+		q.ImageIDs[i] = strings.TrimSpace(q.ImageIDs[i])
+	}
+	return q, catalog.NormalizeQuery(&q)
 }
 
 // Keep standard-library flags while accepting flags after the import path.

@@ -37,6 +37,7 @@ type Query struct {
 	CatalogID     string
 	ImageIDs      []string
 	Geometry      *geo.Geometry
+	CloudCoverLT  *float64 // Strict scene cloud-cover threshold in percent; nil means any.
 	Limit, Offset int
 }
 
@@ -79,6 +80,9 @@ func ValidateName(name string) error {
 }
 
 func NormalizeQuery(q *Query) error {
+	if err := ValidateCloudCover(q.CloudCoverLT); err != nil {
+		return fmt.Errorf("cloud_cover_lt: %w", err)
+	}
 	if q.Limit == 0 {
 		q.Limit = 50
 	}

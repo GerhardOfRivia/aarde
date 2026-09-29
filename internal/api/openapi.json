@@ -257,6 +257,18 @@
             "explode": true
           },
           {
+            "name": "cloud_cover_lt",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "description": "Reported scene cloud cover strictly less than this percentage (0\u2013100, not a fraction). Finite numbers only. Active filtering excludes unknown cloud cover; 0 matches no imagery and 100 excludes fully cloudy imagery. Describes the whole scene, not cloud cover within the selected area. Combined with other filters using AND before ordering and pagination. Omit for any cloud cover, including unknown values. An empty value is invalid.",
+            "example": 20
+          },
+          {
             "name": "limit",
             "in": "query",
             "required": false,
@@ -296,7 +308,7 @@
             "description": "A valid aarde web token is required"
           },
           "400": {
-            "description": "invalid limit"
+            "description": "Invalid pagination, catalog/image ID, or cloud_cover_lt. The cloud-cover threshold must be a finite number between 0 and 100; an empty query value is invalid."
           },
           "500": {
             "description": "catalog request failed"
@@ -330,6 +342,18 @@
             "description": "Repeat this query parameter for up to 100 exact image IDs.",
             "style": "form",
             "explode": true
+          },
+          {
+            "name": "cloud_cover_lt",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "description": "Reported scene cloud cover strictly less than this percentage (0\u2013100, not a fraction). Finite numbers only. Active filtering excludes unknown cloud cover; 0 matches no imagery and 100 excludes fully cloudy imagery. Describes the whole scene, not cloud cover within the selected area. Combined with other filters using AND before ordering and pagination. Omit for any cloud cover, including unknown values. An empty value is invalid.",
+            "example": 20
           },
           {
             "name": "limit",
@@ -803,6 +827,16 @@
             "minimum": 0,
             "maximum": 1000000,
             "default": 0
+          },
+          "cloud_cover_lt": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Reported scene cloud cover strictly less than this percentage (0\u2013100, not a fraction). Finite numbers only. Active filtering excludes unknown cloud cover; 0 matches no imagery and 100 excludes fully cloudy imagery. Describes the whole scene, not cloud cover within the selected area. Combined with other filters using AND before ordering and pagination. Omit or pass null for any cloud cover, including unknown values.",
+            "example": 20
           }
         },
         "example": {
@@ -834,7 +868,8 @@
             ]
           },
           "limit": 50,
-          "offset": 0
+          "offset": 0,
+          "cloud_cover_lt": 20
         }
       },
       "Imagery": {
@@ -912,7 +947,7 @@
             ],
             "minimum": 0,
             "maximum": 100,
-            "description": "Cloud-cover percentage; null when unknown."
+            "description": "Reported scene cloud-cover percentage (0\u2013100, not a fraction); null when unknown. Describes the whole scene, not the selected area."
           }
         },
         "required": [
@@ -1074,7 +1109,7 @@
         }
       },
       "InvalidRequest": {
-        "description": "invalid limit",
+        "description": "Invalid pagination, catalog/image ID, or cloud_cover_lt. The cloud-cover threshold must be a finite number between 0 and 100; an empty query value is invalid.",
         "content": {
           "application/json": {
             "schema": {
@@ -1090,7 +1125,7 @@
         }
       },
       "InvalidSearch": {
-        "description": "Invalid JSON (invalid_json), invalid geometry or topology (invalid_geometry), or invalid pagination/catalog ID (invalid_request). Unknown body and geometry fields and extra JSON values are rejected.",
+        "description": "Invalid JSON (invalid_json), invalid geometry or topology (invalid_geometry), or invalid pagination/catalog ID/cloud_cover_lt (invalid_request). The cloud-cover threshold must be a finite number between 0 and 100, or null. Unknown body and geometry fields and extra JSON values are rejected.",
         "content": {
           "application/json": {
             "schema": {

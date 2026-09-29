@@ -225,3 +225,60 @@ func TestAPIResponsesMatchOpenAPI(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenAPICloudCoverLT(t *testing.T) {
+	_, c := contractCompiler(t)
+	schema, err := c.Compile(contractURL + "#/components/schemas/SearchRequest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		value string
+		valid bool
+	}{
+		{"", true}, {"null", true}, {"0", true}, {"19.9", true}, {"100", true},
+		{"-1", false}, {"100.01", false}, {`"20"`, false}, {`"NaN"`, false}, {"true", false},
+	} {
+		body := `{"geometry":` + searchPolygon
+		if tc.value != "" {
+			body += `,"cloud_cover_lt":` + tc.value
+		}
+		body += "}"
+		value, err := jsonschema.UnmarshalJSON(strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := schema.Validate(value); (err == nil) != tc.valid {
+			t.Errorf("cloud_cover_lt=%s: %v", tc.value, err)
+		}
+	}
+	var doc struct {
+		Paths map[string]map[string]struct {
+			Parameters []struct {
+				Name     string
+				Required bool
+				Schema   struct {
+					Type             string
+					Minimum, Maximum float64
+				}
+			}
+		}
+	}
+	if err := json.Unmarshal(openAPISpec, &doc); err != nil {
+		t.Fatal(err)
+	}
+	for _, method := range []string{"get", "head"} {
+		found := false
+		for _, param := range doc.Paths["/api/v1/imagery"][method].Parameters {
+			if param.Name == "cloud_cover_lt" {
+				found = true
+				if param.Required || param.Schema.Type != "number" || param.Schema.Minimum != 0 || param.Schema.Maximum != 100 {
+					t.Errorf("incorrect %s cloud-cover parameter: %+v", method, param)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("%s is missing cloud_cover_lt", method)
+		}
+	}
+}

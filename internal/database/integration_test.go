@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -404,6 +405,113 @@ func TestCloudCoverPersistence(t *testing.T) {
 			if _, err := repo.pool.Exec(ctx, "UPDATE imagery SET cloud_cover=$1 WHERE id=$2", invalid, saved.ID); err == nil {
 				t.Fatalf("database accepted %v", invalid)
 			}
+		}
+	}
+}
+
+func TestCloudCoverFiltering(t *testing.T) {
+	ctx, repo, service, cat := testDB(t)
+	zero, fraction, threshold, full := 0.0, 19.9, 20.0, 100.0
+	outside := `{"type":"Polygon","coordinates":[[[5,5],[6,5],[6,6],[5,5]]]}`
+	// Nonmatches are newer than matches, so filtering a fetched page fails.
+	for n, fixture := range []struct {
+		name, catalog, shape string
+		cover                *float64
+	}{
+		{"zero", cat, rectangle, &zero},
+		{"fraction", cat, rectangle, &fraction},
+		{"boundary", cat, rectangle, &threshold},
+		{"full", cat, rectangle, &full},
+		{"unknown", cat, rectangle, nil},
+		{"outside", cat, outside, &zero},
+		{"zero", cat + "-other", rectangle, &zero},
+	} {
+		i := model(t, fixture.catalog, cat+"-"+fixture.name, fixture.shape)
+		i.CloudCover = fixture.cover
+		saved, _, err := service.Import(ctx, i)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := repo.pool.Exec(ctx, "UPDATE imagery SET imported_at=$1 WHERE id=$2", time.Date(2026, 1, 1, 0, 0, n, 0, time.UTC), saved.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	g := geometry(t, rectangle)
+	assertPage := func(q catalog.Query, want []string, more bool) {
+		t.Helper()
+		page, err := service.Search(ctx, q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := []string{}
+		for _, item := range page.Items {
+			got = append(got, strings.TrimPrefix(item.ImageID, cat+"-"))
+		}
+		if !slices.Equal(got, want) || page.HasMore != more || page.Offset != q.Offset {
+			t.Fatalf("query %+v: got %v, has_more=%v, offset=%d; want %v, has_more=%v", q, got, page.HasMore, page.Offset, want, more)
+		}
+	}
+	for _, tc := range []struct {
+		name  string
+		cover *float64
+		want  []string
+	}{
+		{"omitted", nil, []string{"unknown", "full", "boundary", "fraction", "zero"}},
+		{"twenty", &threshold, []string{"fraction", "zero"}},
+		{"zero", &zero, nil},
+		{"hundred", &full, []string{"boundary", "fraction", "zero"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assertPage(catalog.Query{CatalogID: cat, Geometry: &g, CloudCoverLT: tc.cover}, tc.want, false)
+		})
+	}
+	assertPage(catalog.Query{CatalogID: cat}, []string{"outside", "unknown", "full", "boundary", "fraction", "zero"}, false)
+	assertPage(catalog.Query{CatalogID: cat, CloudCoverLT: &threshold}, []string{"outside", "fraction", "zero"}, false)
+	assertPage(catalog.Query{CatalogID: cat, Geometry: &g, CloudCoverLT: &threshold, ImageIDs: []string{cat + "-fraction", cat + "-boundary", cat + "-unknown"}}, []string{"fraction"}, false)
+	assertPage(catalog.Query{Geometry: &g, CloudCoverLT: &threshold, ImageIDs: []string{cat + "-zero"}}, []string{"zero", "zero"}, false)
+	for _, spatial := range []bool{false, true} {
+		q := catalog.Query{CatalogID: cat, CloudCoverLT: &threshold, Limit: 1}
+		want := []string{"outside", "fraction", "zero"}
+		if spatial {
+			q.Geometry = &g
+			want = want[1:]
+		}
+		for offset, id := range want {
+			q.Offset = offset
+			assertPage(q, []string{id}, offset < len(want)-1)
+		}
+		q.Offset = len(want)
+		assertPage(q, nil, false)
+		q.Offset, q.Limit = 0, len(want)
+		assertPage(q, want, false)
+	}
+
+	h := api.Routes(service, "dev", api.Access{PublicRead: true}, "none")
+	for _, tc := range []struct {
+		method, path, body string
+		want               []string
+		more               bool
+	}{
+		{"GET", "/imagery?catalog_id=" + cat + "&cloud_cover_lt=20&limit=1&offset=1", "", []string{"fraction"}, true},
+		{"GET", "/imagery?catalog_id=" + cat + "&cloud_cover_lt=0", "", nil, false},
+		{"POST", "/imagery/search", `{"catalog_id":"` + cat + `","geometry":` + rectangle + `,"cloud_cover_lt":20,"limit":1,"offset":1}`, []string{"zero"}, false},
+		{"POST", "/imagery/search", `{"catalog_id":"` + cat + `","geometry":` + rectangle + `,"cloud_cover_lt":null}`, []string{"unknown", "full", "boundary", "fraction", "zero"}, false},
+	} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body)))
+		if w.Code != 200 {
+			t.Fatalf("HTTP %d: %s", w.Code, w.Body.String())
+		}
+		var page api.SearchResponse
+		if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil {
+			t.Fatal(err)
+		}
+		got := []string{}
+		for _, item := range page.Items {
+			got = append(got, strings.TrimPrefix(item.ImageID, cat+"-"))
+		}
+		if !slices.Equal(got, tc.want) || page.HasMore != tc.more {
+			t.Fatalf("HTTP %s %s: %s", tc.method, tc.path, w.Body.String())
 		}
 	}
 }

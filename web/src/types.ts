@@ -29,6 +29,7 @@ export interface Search {
   catalog: string;
   ids?: string[];
   geometry?: Area;
+  cloudCoverLT?: number;
 }
 
 export interface AccessInfo {
@@ -67,6 +68,16 @@ export async function request<T>(
   }
   return response.json();
 }
+// Empty input is an omitted filter; an explicit zero remains a threshold.
+export function parseCloudCoverLT(raw: string): number | undefined {
+  if (raw.trim() === "") return undefined;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0 || value > 100) {
+    throw new Error("Scene cloud cover must be a finite percentage between 0 and 100.");
+  }
+  return value;
+}
+
 export function search(
   token: string,
   criteria: Search,
@@ -81,11 +92,13 @@ export function search(
       body: JSON.stringify({
         catalog_id: criteria.catalog,
         geometry: criteria.geometry,
+        cloud_cover_lt: criteria.cloudCoverLT,
         limit: 50,
         offset,
       }),
     });
   const query = new URLSearchParams({ limit: "50", offset: String(offset) });
+  if (criteria.cloudCoverLT !== undefined) query.set("cloud_cover_lt", String(criteria.cloudCoverLT));
   if (criteria.catalog) query.set("catalog_id", criteria.catalog);
   criteria.ids?.forEach((id) => query.append("image_id", id));
   return request(`/api/v1/imagery?${query}`, token, { signal });

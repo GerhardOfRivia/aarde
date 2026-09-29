@@ -23,9 +23,11 @@ docker compose exec aarde aarde import /data --recursive
 docker compose exec -T aarde cat /home/aarde/.local/state/aarde/web.token
 ```
 
-Select a catalog, click **Draw Area**, click vertices on the map, and double-click to finish. Click **Search This Area** to find images whose footprints intersect that polygon. Select a row or a footprint to inspect metadata. **Edit Area** changes vertices; searches run only when explicitly requested. **Clear** removes the drawing and leaves the last results visible. Use **Browse all** to reset the search. Exact image IDs can be entered individually or comma-separated.
+Select a catalog, click **Draw Area**, click vertices on the map, and double-click to finish. Click **Search This Area** to find images whose footprints intersect that polygon. Select a row or a footprint to inspect metadata. **Edit Area** changes vertices; searches run only when explicitly requested. **Clear** removes the drawing and clears the cloud-cover input, leaving the last results visible until you search again. Use **Browse all** to browse with the selected catalog and cloud-cover threshold. Exact image IDs can be entered individually or comma-separated.
 
 To use an existing boundary, choose **Paste GeoJSON**, paste a WGS84 Polygon or MultiPolygon, and click **Load Area**. A polygon Feature or a FeatureCollection containing only polygon Features also works; multiple features become one MultiPolygon search area. The map fits the loaded area, which can be adjusted with **Edit Area**. Click **Search This Area** to search the selected catalog. Loading replaces the current area and keeps existing results until you search. Invalid JSON, unsupported geometries, open rings, out-of-range coordinates, and oversized areas show an error without replacing the existing area. PostGIS checks polygon topology when the search runs.
+
+**Scene cloud cover less than (%)** accepts an optional decimal percentage from 0 to 100. Empty means **Any**. Apply it with **Search ID**, **Browse all**, or **Search This Area**; a new search starts on the first page, and pagination keeps the applied filters. Unknown cloud cover is excluded while filtering. This is reported cloud cover for the whole scene, not cloud cover within your selected area.
 
 No imagery yet? Generate a tiny synthetic GeoTIFF for trying the workflow:
 
@@ -136,7 +138,10 @@ aarde import ./imagery --recursive --dry-run
 aarde search --id ABC123
 aarde search --id ABC123,IMG002 --catalog breckenridge
 aarde search --id ABC123 --limit 50 --offset 0
+aarde search --id ABC123,IMG002 --catalog breckenridge --cloud-cover-lt 20
 ```
+
+`aarde search --cloud-cover-lt 20` (with the required `--id`) returns only imagery whose reported scene cloud cover is strictly below 20%. Omit the flag for any cloud cover; unknown values are excluded when the flag is supplied. The threshold accepts finite decimal percentages from 0 through 100, including explicit zero. It describes the scene, not a selected area.
 
 Flags may precede or follow the import path. `inspect` prints JSON with format, source CRS (WKT), source corners, width, height, band count, acquisition time, cloud-cover percentage, calculated EPSG:4326 footprint, SHA-256 checksum, asset path, and metadata. It does not need a database.
 
@@ -178,8 +183,8 @@ Routes are under `/api/v1`. All reads require the bearer token unless public rea
 | GET | `/health` | Database readiness; 503 when unavailable |
 | GET | `/catalogs` | `{ "items": ["default"] }`; catalogs with imagery |
 | GET | `/imagery/{catalogID}/{imageID}` | Exact record; 404 if absent |
-| GET | `/imagery` | Filter by `catalog_id`, repeated `image_id`, `limit`, `offset` |
-| POST | `/imagery/search` | Polygon or MultiPolygon intersection search |
+| GET | `/imagery` | Filter by `catalog_id`, repeated `image_id`, `cloud_cover_lt`, `limit`, `offset` |
+| POST | `/imagery/search` | Polygon or MultiPolygon intersection search; optional `catalog_id` and `cloud_cover_lt` |
 
 ```sh
 # Docker; for a native server, read the token_file path from its startup log.
@@ -187,15 +192,17 @@ AARDE_TOKEN=$(docker compose exec -T aarde cat /home/aarde/.local/state/aarde/we
 curl -H "Authorization: Bearer $AARDE_TOKEN" http://localhost:8080/api/v1/health
 curl -H "Authorization: Bearer $AARDE_TOKEN" http://localhost:8080/api/v1/catalogs
 curl -H "Authorization: Bearer $AARDE_TOKEN" http://localhost:8080/api/v1/imagery/default/ABC123
-curl -H "Authorization: Bearer $AARDE_TOKEN" 'http://localhost:8080/api/v1/imagery?catalog_id=default&image_id=ABC123&image_id=IMG002&limit=50&offset=0'
+curl -H "Authorization: Bearer $AARDE_TOKEN" 'http://localhost:8080/api/v1/imagery?catalog_id=default&image_id=ABC123&image_id=IMG002&cloud_cover_lt=20&limit=50&offset=0'
 
 curl -X POST http://localhost:8080/api/v1/imagery/search \
   -H "Authorization: Bearer $AARDE_TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"catalog_id":"default","geometry":{"type":"Polygon","coordinates":[[[-106.2,39.3],[-105.8,39.3],[-105.8,39.7],[-106.2,39.7],[-106.2,39.3]]]},"limit":100,"offset":0}'
+  -d '{"catalog_id":"default","geometry":{"type":"Polygon","coordinates":[[[-106.2,39.3],[-105.8,39.3],[-105.8,39.7],[-106.2,39.7],[-106.2,39.3]]]},"cloud_cover_lt":20,"limit":100,"offset":0}'
 ```
 
 Omit `catalog_id` to search all catalogs. List/search responses are `{ "items": [...], "limit": 50, "offset": 0, "has_more": false }`. Pagination is ordered by import time descending, then UUID; concurrent imports can shift offset-based pages. Limits default to 50 and are capped at 200. At most 100 exact IDs, 10,000 geometry positions, a 1 MiB request body, and offset 1,000,000 are accepted. Unknown search body fields, extra JSON values, invalid rings, out-of-range coordinates, and unsupported geometry types are rejected. PostGIS validates polygon topology, including self-intersections.
+
+`cloud_cover_lt` is an optional finite percentage from 0 to 100 (not a 0–1 fraction), accepted by GET listing and the spatial-search JSON body. Omission, or JSON `null`, preserves all existing matches including unknown cloud cover. A threshold of `20` includes `0` and `19.9`, but excludes `20`, `100`, and unknown values. `0` is valid and matches no imagery; `100` excludes values equal to 100 and unknown values. Empty GET values, malformed numbers, NaN, infinities, and values outside 0–100 return HTTP 400. The database combines this scene-level metadata filter with catalog, image-ID, and spatial predicates using AND before ordering and pagination; `has_more` reflects only matching imagery. Search never reads raster files or estimates cloud cover within the selected area.
 
 See the [GDAL JSON inspection documentation](https://gdal.org/en/stable/programs/gdalinfo.html) and [PostGIS ST_Intersects reference](https://postgis.net/docs/ST_Intersects.html).
 
@@ -260,13 +267,13 @@ docker build --build-arg VERSION=v0.1.0 -t aarde:v0.1.0 .
 
 ```sh
 go test -race ./...     # unit tests; integration tests explicitly skip without a test URL
-cd web && npm ci && npm test && npm run build && cd ..  # GeoJSON validation, strict TypeScript, production build
+cd web && npm ci && npm test && npm run build && cd ..  # GeoJSON/search request tests, strict TypeScript, production build
 
 make integration
 ```
 
 Alternatively, set `AARDE_TEST_DATABASE_URL` to a dedicated PostGIS database and install GDAL locally before `go test -race -count=1 ./...`. Tests migrate that database, use unique catalog names, and remove their own records. Never point tests at a production database.
 
-Integration tests generate small real GeoTIFFs in EPSG:4326 and EPSG:32613. They cover single/recursive imports, unsupported and corrupt files, missing acquisition time, duplicate checksums, ID conflicts, concurrent imports, source preservation, dry run, exact/unknown IDs, multiple catalogs, pagination, actual polygon intersection (including bounding-box false positives), partial overlap, boundary contact, MultiPolygons, invalid topology, and real HTTP requests. Unit tests cover geometry/request limits, GDAL JSON parsing, discovery, offline dry run, and CLI flags. No PostGIS mocks are used for spatial correctness.
+Integration tests generate small real GeoTIFFs in EPSG:4326 and EPSG:32613. They cover single/recursive imports, unsupported and corrupt files, missing acquisition time, duplicate checksums, ID conflicts, concurrent imports, source preservation, dry run, exact/unknown IDs, multiple catalogs, strict cloud-cover thresholds/unknown values, filtered pagination, actual polygon intersection (including bounding-box false positives), partial overlap, boundary contact, MultiPolygons, invalid topology, and real HTTP requests. Unit tests cover geometry/request limits, GDAL JSON parsing, discovery, offline dry run, and CLI flags. No PostGIS mocks are used for spatial correctness.
 
 ![icon](icon.png)

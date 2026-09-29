@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -161,8 +162,20 @@ func (h Handler) get(w http.ResponseWriter, r *http.Request) {
 	JSON(w, 200, Response(i))
 }
 func (h Handler) list(w http.ResponseWriter, r *http.Request) {
-	values := r.URL.Query()
+	values, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		Error(w, 400, "invalid_request", "malformed query parameters")
+		return
+	}
 	q := catalog.Query{CatalogID: values.Get("catalog_id"), ImageIDs: values["image_id"]}
+	if values.Has("cloud_cover_lt") {
+		value, err := strconv.ParseFloat(values.Get("cloud_cover_lt"), 64)
+		if err != nil {
+			Error(w, 400, "invalid_request", "cloud_cover_lt must be a finite number between 0 and 100")
+			return
+		}
+		q.CloudCoverLT = &value
+	}
 	for key, target := range map[string]*int{"limit": &q.Limit, "offset": &q.Offset} {
 		if values.Has(key) {
 			n, err := strconv.Atoi(values.Get(key))
@@ -177,10 +190,11 @@ func (h Handler) list(w http.ResponseWriter, r *http.Request) {
 }
 func (h Handler) search(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		CatalogID string          `json:"catalog_id"`
-		Geometry  json.RawMessage `json:"geometry"`
-		Limit     *int            `json:"limit"`
-		Offset    int             `json:"offset"`
+		CatalogID    string          `json:"catalog_id"`
+		Geometry     json.RawMessage `json:"geometry"`
+		CloudCoverLT *float64        `json:"cloud_cover_lt"`
+		Limit        *int            `json:"limit"`
+		Offset       int             `json:"offset"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, MaxBodyBytes)
 	dec := json.NewDecoder(r.Body)
@@ -198,8 +212,11 @@ func (h Handler) search(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		var large *http.MaxBytesError
+		var field *json.UnmarshalTypeError
 		if errors.As(err, &large) {
 			Error(w, 413, "body_too_large", "request body exceeds 1 MiB")
+		} else if errors.As(err, &field) && field.Field == "cloud_cover_lt" {
+			Error(w, 400, "invalid_request", "cloud_cover_lt must be a finite number between 0 and 100 or null")
 		} else {
 			Error(w, 400, "invalid_json", "expected one JSON search object with known fields")
 		}
@@ -210,7 +227,7 @@ func (h Handler) search(w http.ResponseWriter, r *http.Request) {
 		Error(w, 400, "invalid_geometry", err.Error())
 		return
 	}
-	q := catalog.Query{CatalogID: body.CatalogID, Geometry: &g, Offset: body.Offset}
+	q := catalog.Query{CatalogID: body.CatalogID, Geometry: &g, CloudCoverLT: body.CloudCoverLT, Offset: body.Offset}
 	if body.Limit != nil {
 		q.Limit = *body.Limit
 		if q.Limit == 0 {

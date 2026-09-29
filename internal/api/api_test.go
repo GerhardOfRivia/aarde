@@ -1,9 +1,12 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"github.com/GerhardOfRivia/aarde/internal/catalog"
+	"github.com/GerhardOfRivia/aarde/internal/geo"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -59,5 +62,99 @@ func TestCloudCoverResponse(t *testing.T) {
 		if !present || cover == nil && got != nil || cover != nil && got != *cover {
 			t.Fatalf("cloud_cover serialized incorrectly: %s", data)
 		}
+	}
+}
+
+// Capture parsed inputs only; SQL and spatial semantics use real PostGIS tests.
+type queryStore struct {
+	catalog.Store
+	query *catalog.Query
+}
+
+func (s queryStore) ValidateGeometry(context.Context, geo.Geometry) error { return nil }
+func (s queryStore) Search(_ context.Context, q catalog.Query) (catalog.Page, error) {
+	*s.query = q
+	return catalog.Page{Limit: q.Limit, Offset: q.Offset}, nil
+}
+
+const searchPolygon = `{"type":"Polygon","coordinates":[[[0,0],[2,0],[2,2],[0,2],[0,0]]]}`
+
+func TestCloudCoverQueryParsing(t *testing.T) {
+	for _, raw := range []string{"", "0", "19.9", "20", "100", "null"} {
+		for _, method := range []string{"GET", "POST"} {
+			if method == "GET" && raw == "null" {
+				continue
+			}
+			t.Run(method+"/"+raw, func(t *testing.T) {
+				var got catalog.Query
+				h := Routes(catalog.New(queryStore{query: &got}), "dev", Access{PublicRead: true}, "none")
+				path := "/imagery?catalog_id=example&image_id=one&image_id=two&limit=1&offset=2"
+				body := ""
+				if method == "GET" && raw != "" {
+					path += "&cloud_cover_lt=" + raw
+				} else if method == "POST" {
+					path = "/imagery/search"
+					body = `{"catalog_id":"example","geometry":` + searchPolygon + `,"limit":1,"offset":2`
+					if raw != "" {
+						body += `,"cloud_cover_lt":` + raw
+					}
+					body += "}"
+				}
+				w := httptest.NewRecorder()
+				h.ServeHTTP(w, httptest.NewRequest(method, path, strings.NewReader(body)))
+				if w.Code != 200 {
+					t.Fatalf("%d: %s", w.Code, w.Body.String())
+				}
+				if raw == "" || raw == "null" {
+					if got.CloudCoverLT != nil {
+						t.Fatal("omitted/null filter became a threshold")
+					}
+				} else {
+					var want float64
+					if err := json.Unmarshal([]byte(raw), &want); err != nil {
+						t.Fatal(err)
+					}
+					if got.CloudCoverLT == nil || *got.CloudCoverLT != want {
+						t.Fatalf("threshold %s lost: %+v", raw, got)
+					}
+				}
+				if got.CatalogID != "example" || got.Limit != 1 || got.Offset != 2 ||
+					(method == "GET" && strings.Join(got.ImageIDs, ",") != "one,two") ||
+					(method == "POST" && got.Geometry == nil) {
+					t.Fatalf("other filters lost: %+v", got)
+				}
+			})
+		}
+	}
+}
+
+func TestInvalidCloudCoverQueries(t *testing.T) {
+	h := Routes(nil, "dev", Access{PublicRead: true}, "none")
+	check := func(method, path, body string, fieldMessage bool) {
+		t.Helper()
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(method, path, strings.NewReader(body)))
+		var response struct {
+			Error struct{ Code, Message string }
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		if w.Code != 400 || response.Error.Code == "" || response.Error.Message == "" ||
+			fieldMessage && !strings.Contains(response.Error.Message, "cloud_cover_lt") {
+			t.Fatalf("%s %s %s: %d %s", method, path, body, w.Code, w.Body.String())
+		}
+	}
+	for _, raw := range []string{"", " ", "bad", "20%", "null", "-1", "100.01", "NaN", "Inf", "+Inf", "-Inf", "1e400"} {
+		check("GET", "/imagery?cloud_cover_lt="+url.QueryEscape(raw), "", true)
+	}
+	check("GET", "/imagery?cloud_cover_lt", "", true)
+	check("GET", "/imagery?cloud_cover_lt=%zz", "", false)
+	check("GET", "/imagery?cloud_cover_lt=20;bad", "", false)
+	for _, raw := range []string{`""`, `"20"`, `"NaN"`, `true`, `[]`, `{}`, "-1", "100.01", "1e400"} {
+		check("POST", "/imagery/search", `{"geometry":`+searchPolygon+`,"cloud_cover_lt":`+raw+`}`, true)
+	}
+	for _, raw := range []string{"NaN", "Infinity", "-Infinity", "20.1.2", ""} {
+		check("POST", "/imagery/search", `{"geometry":`+searchPolygon+`,"cloud_cover_lt":`+raw+`}`, false)
 	}
 }

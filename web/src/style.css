@@ -124,6 +124,7 @@ body {
   font-size: 12px;
 }
 .search-bar {
+  flex-wrap: wrap;
   padding: 25px 30px 20px;
   display: flex;
   align-items: center;
@@ -149,6 +150,7 @@ h2 {
   letter-spacing: -0.3px;
 }
 .id-search {
+  flex-wrap: wrap;
   display: flex;
   align-items: flex-start;
   gap: 10px;
@@ -164,10 +166,16 @@ h2 {
 .id-input {
   width: 250px;
 }
-.id-input .MuiInputBase-root {
+.cloud-cover-input {
+  width: 290px;
+  max-width: 100%;
+}
+.id-input .MuiInputBase-root,
+.cloud-cover-input .MuiInputBase-root {
   background: var(--surface-primary);
 }
-.id-input .MuiFormHelperText-root {
+.id-input .MuiFormHelperText-root,
+.cloud-cover-input .MuiFormHelperText-root {
   font-size: 10px;
   margin-left: 0;
 }

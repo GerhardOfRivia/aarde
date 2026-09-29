@@ -52,3 +52,22 @@ func TestValidateCloudCover(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizeCloudCoverLT(t *testing.T) {
+	if err := NormalizeQuery(&Query{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []float64{0, 19.9, 20, 100} {
+		q := Query{CloudCoverLT: &value}
+		if err := NormalizeQuery(&q); err != nil || q.CloudCoverLT == nil || *q.CloudCoverLT != value {
+			t.Fatalf("threshold %v was lost: %+v %v", value, q, err)
+		}
+	}
+	for _, value := range []float64{-1, 100.01, math.NaN(), math.Inf(1), math.Inf(-1)} {
+		// Invalid thresholds must fail before geometry validation or database access.
+		_, err := New(nil).Search(context.Background(), Query{CloudCoverLT: &value})
+		if err == nil || !strings.Contains(err.Error(), "cloud_cover_lt") {
+			t.Errorf("accepted %v: %v", value, err)
+		}
+	}
+}

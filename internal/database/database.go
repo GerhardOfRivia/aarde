@@ -197,6 +197,10 @@ func (r *Repository) Search(ctx context.Context, q catalog.Query) (catalog.Page,
 		args = append(args, string(q.Geometry.JSON()))
 		where += fmt.Sprintf(" AND ST_Intersects(footprint, ST_SetSRID(ST_GeomFromGeoJSON($%d),4326))", len(args))
 	}
+	if q.CloudCoverLT != nil {
+		args = append(args, *q.CloudCoverLT)
+		where += fmt.Sprintf(" AND cloud_cover < $%d", len(args))
+	}
 	args = append(args, q.Limit+1, q.Offset)
 	query := "SELECT " + columns + " FROM imagery" + where + fmt.Sprintf(" ORDER BY imported_at DESC, id ASC LIMIT $%d OFFSET $%d", len(args)-1, len(args))
 	rows, err := r.pool.Query(ctx, query, args...)
