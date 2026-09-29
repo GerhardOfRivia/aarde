@@ -51,11 +51,14 @@ func (i Imagery) Format() *string {
 }
 
 type Query struct {
-	CatalogID     string
-	ImageIDs      []string
-	Geometry      *geo.Geometry
-	CloudCoverLT  *float64 // Strict scene cloud-cover threshold in percent; nil means any.
-	Limit, Offset int
+	CatalogID                    string
+	ImageIDs                     []string
+	Geometry                     *geo.Geometry
+	CloudCoverLT                 *float64   // Strict scene cloud-cover threshold in percent; nil means any.
+	CloudCoverLTE                *float64   // Inclusive maximum; mutually exclusive with CloudCoverLT.
+	CloudCoverUnknown            string     // exclude, include, or only; empty selects the default.
+	AcquiredFrom, AcquiredBefore *time.Time // Inclusive lower and exclusive upper bounds.
+	Limit, Offset                int
 }
 
 type Page struct {
@@ -99,6 +102,31 @@ func ValidateName(name string) error {
 func NormalizeQuery(q *Query) error {
 	if err := ValidateCloudCover(q.CloudCoverLT); err != nil {
 		return fmt.Errorf("cloud_cover_lt: %w", err)
+	}
+	if err := ValidateCloudCover(q.CloudCoverLTE); err != nil {
+		return fmt.Errorf("cloud_cover_lte: %w", err)
+	}
+	if q.CloudCoverLT != nil && q.CloudCoverLTE != nil {
+		return errors.New("cloud_cover_lt and cloud_cover_lte cannot be combined")
+	}
+	hasThreshold := q.CloudCoverLT != nil || q.CloudCoverLTE != nil
+	if q.CloudCoverUnknown == "" {
+		q.CloudCoverUnknown = "include"
+		if hasThreshold {
+			q.CloudCoverUnknown = "exclude"
+		}
+	}
+	switch q.CloudCoverUnknown {
+	case "include", "exclude":
+	case "only":
+		if hasThreshold {
+			return errors.New("cloud_cover_unknown=only cannot be combined with a cloud-cover threshold")
+		}
+	default:
+		return errors.New("cloud_cover_unknown must be exclude, include, or only")
+	}
+	if q.AcquiredFrom != nil && q.AcquiredBefore != nil && !q.AcquiredFrom.Before(*q.AcquiredBefore) {
+		return errors.New("acquired_before must be after acquired_from")
 	}
 	if q.Limit == 0 {
 		q.Limit = 50

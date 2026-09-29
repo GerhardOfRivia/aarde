@@ -30,7 +30,7 @@ interface Props {
   items: Imagery[];
   selected: Imagery | null;
   onSelect(id: string): void;
-  onArea(exists: boolean, editing?: boolean): void;
+  onArea(area: Area | undefined, editing?: boolean): void;
 }
 const format = new GeoJSON();
 const projection = {
@@ -102,13 +102,17 @@ export const MapCanvas = forwardRef<MapHandle, Props>(
       map.addInteraction(modify);
       draw.on("drawstart", () => {
         aoi.clear();
-        callbacks.current.onArea(false, true);
+        callbacks.current.onArea(undefined, true);
       });
-      draw.on("drawend", () => {
+      draw.on("drawend", (event) => {
         draw.setActive(false);
-        callbacks.current.onArea(true, false);
+        // OpenLayers emits drawend before adding the completed feature to the source.
+        callbacks.current.onArea(format.writeGeometryObject(event.feature.getGeometry()!, projection) as Area, false);
       });
-      modify.on("modifyend", () => callbacks.current.onArea(true, true));
+      modify.on("modifyend", () => {
+        const feature = aoi.getFeatures()[0];
+        callbacks.current.onArea(feature ? format.writeGeometryObject(feature.getGeometry()!, projection) as Area : undefined, true);
+      });
       map.on("singleclick", (event) => {
         if (draw.getActive() || modify.getActive()) return;
         const feature = map.forEachFeatureAtPixel(event.pixel, (f) => f, {
@@ -182,7 +186,7 @@ export const MapCanvas = forwardRef<MapHandle, Props>(
           s.modify.setActive(false);
           s.aoi.clear();
           s.aoi.addFeature(feature);
-          callbacks.current.onArea(true, false);
+          callbacks.current.onArea(format.writeGeometryObject(feature.getGeometry()!, projection) as Area, false);
           s.map.getView().fit(feature.getGeometry()!.getExtent(), {
             padding: [60, 60, 60, 60],
             maxZoom: 16,
@@ -200,7 +204,7 @@ export const MapCanvas = forwardRef<MapHandle, Props>(
           s.draw.setActive(false);
           s.modify.setActive(!s.modify.getActive());
           callbacks.current.onArea(
-            s.aoi.getFeatures().length > 0,
+            s.aoi.getFeatures()[0] ? format.writeGeometryObject(s.aoi.getFeatures()[0].getGeometry()!, projection) as Area : undefined,
             s.modify.getActive(),
           );
         },
@@ -210,7 +214,7 @@ export const MapCanvas = forwardRef<MapHandle, Props>(
           s.draw.setActive(false);
           s.modify.setActive(false);
           s.aoi.clear();
-          callbacks.current.onArea(false, false);
+          callbacks.current.onArea(undefined, false);
         },
         stop() {
           const s = state.current!;

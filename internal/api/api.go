@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -169,13 +170,26 @@ func (h Handler) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := catalog.Query{CatalogID: values.Get("catalog_id"), ImageIDs: values["image_id"]}
-	if values.Has("cloud_cover_lt") {
-		value, err := strconv.ParseFloat(values.Get("cloud_cover_lt"), 64)
-		if err != nil {
-			Error(w, 400, "invalid_request", "cloud_cover_lt must be a finite number between 0 and 100")
-			return
+	for key, target := range map[string]**float64{"cloud_cover_lt": &q.CloudCoverLT, "cloud_cover_lte": &q.CloudCoverLTE} {
+		if values.Has(key) {
+			value, err := strconv.ParseFloat(values.Get(key), 64)
+			if err != nil {
+				Error(w, 400, "invalid_request", key+" must be a finite number between 0 and 100")
+				return
+			}
+			*target = &value
 		}
-		q.CloudCoverLT = &value
+	}
+	optional := func(key string) *string {
+		if !values.Has(key) {
+			return nil
+		}
+		value := values.Get(key)
+		return &value
+	}
+	if err := searchMetadata(&q, optional("acquired_from"), optional("acquired_before"), optional("cloud_cover_unknown")); err != nil {
+		Error(w, 400, "invalid_request", err.Error())
+		return
 	}
 	for key, target := range map[string]*int{"limit": &q.Limit, "offset": &q.Offset} {
 		if values.Has(key) {
@@ -191,11 +205,16 @@ func (h Handler) list(w http.ResponseWriter, r *http.Request) {
 }
 func (h Handler) search(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		CatalogID    string          `json:"catalog_id"`
-		Geometry     json.RawMessage `json:"geometry"`
-		CloudCoverLT *float64        `json:"cloud_cover_lt"`
-		Limit        *int            `json:"limit"`
-		Offset       int             `json:"offset"`
+		CatalogID         string          `json:"catalog_id"`
+		ImageIDs          []string        `json:"image_ids"`
+		AcquiredFrom      *string         `json:"acquired_from"`
+		AcquiredBefore    *string         `json:"acquired_before"`
+		CloudCoverUnknown *string         `json:"cloud_cover_unknown"`
+		CloudCoverLTE     *float64        `json:"cloud_cover_lte"`
+		Geometry          json.RawMessage `json:"geometry"`
+		CloudCoverLT      *float64        `json:"cloud_cover_lt"`
+		Limit             *int            `json:"limit"`
+		Offset            int             `json:"offset"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, MaxBodyBytes)
 	dec := json.NewDecoder(r.Body)
@@ -216,8 +235,10 @@ func (h Handler) search(w http.ResponseWriter, r *http.Request) {
 		var field *json.UnmarshalTypeError
 		if errors.As(err, &large) {
 			Error(w, 413, "body_too_large", "request body exceeds 1 MiB")
-		} else if errors.As(err, &field) && field.Field == "cloud_cover_lt" {
-			Error(w, 400, "invalid_request", "cloud_cover_lt must be a finite number between 0 and 100 or null")
+		} else if errors.As(err, &field) && (field.Field == "cloud_cover_lt" || field.Field == "cloud_cover_lte") {
+			Error(w, 400, "invalid_request", field.Field+" must be a finite number between 0 and 100 or null")
+		} else if errors.As(err, &field) {
+			Error(w, 400, "invalid_request", "invalid "+field.Field)
 		} else {
 			Error(w, 400, "invalid_json", "expected one JSON search object with known fields")
 		}
@@ -228,7 +249,11 @@ func (h Handler) search(w http.ResponseWriter, r *http.Request) {
 		Error(w, 400, "invalid_geometry", err.Error())
 		return
 	}
-	q := catalog.Query{CatalogID: body.CatalogID, Geometry: &g, CloudCoverLT: body.CloudCoverLT, Offset: body.Offset}
+	q := catalog.Query{CatalogID: body.CatalogID, ImageIDs: body.ImageIDs, Geometry: &g, CloudCoverLT: body.CloudCoverLT, CloudCoverLTE: body.CloudCoverLTE, Offset: body.Offset}
+	if err := searchMetadata(&q, body.AcquiredFrom, body.AcquiredBefore, body.CloudCoverUnknown); err != nil {
+		Error(w, 400, "invalid_request", err.Error())
+		return
+	}
 	if body.Limit != nil {
 		q.Limit = *body.Limit
 		if q.Limit == 0 {
@@ -253,4 +278,31 @@ func (h Handler) execute(w http.ResponseWriter, r *http.Request, q catalog.Query
 		return
 	}
 	JSON(w, 200, PageResponse(p))
+}
+
+// Shared metadata parsing keeps GET and spatial POST semantics identical.
+func searchMetadata(q *catalog.Query, from, before, unknown *string) error {
+	for _, bound := range []struct {
+		key    string
+		raw    *string
+		target **time.Time
+	}{
+		{"acquired_from", from, &q.AcquiredFrom}, {"acquired_before", before, &q.AcquiredBefore},
+	} {
+		if bound.raw == nil {
+			continue
+		}
+		value, err := time.Parse(time.RFC3339Nano, *bound.raw)
+		if err != nil {
+			return fmt.Errorf("%s must be an RFC3339 timestamp", bound.key)
+		}
+		*bound.target = &value
+	}
+	if unknown != nil {
+		if *unknown == "" {
+			return errors.New("cloud_cover_unknown must be exclude, include, or only")
+		}
+		q.CloudCoverUnknown = *unknown
+	}
+	return nil
 }

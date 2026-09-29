@@ -4,16 +4,18 @@ import {
   Button,
   Chip,
   CircularProgress,
-  MenuItem,
-  TextField,
 } from "@mui/material";
 import { AccessGate, ThemeControl } from "./Access";
 import type { Session } from "./Access";
 import { MapCanvas } from "./MapCanvas";
 import { GeoJSONInput } from "./GeoJSONInput";
 import type { MapHandle } from "./MapCanvas";
-import { APIError, parseCloudCoverLT, request, search } from "./types";
-import type { Area, Basemap, Imagery, Page, Search } from "./types";
+import { APIError, request, search } from "./types";
+import type { Area, Basemap, Imagery, Page } from "./types";
+import { CatalogFilters } from "./CatalogFilters";
+import { appliedFilters, buildSearch, defaultFilters, filterKey, removeFilter } from "./filters";
+import type { FilterDraft, FilterErrors } from "./filters";
+import { parseSearchArea } from "./geojson";
 
 const basemapKey = "aarde.web.basemap";
 function storedBasemap(): Basemap {
@@ -41,22 +43,40 @@ function CatalogApp({ session }: { session: Session }) {
   const basemap = info.basemap === "osm" ? basemapPreference : info.basemap;
   const map = useRef<MapHandle>(null),
     active = useRef<AbortController | null>(null);
-  const [catalogs, setCatalogs] = useState<string[]>([]),
-    [catalog, setCatalog] = useState("");
-  const [cloudCoverLT, setCloudCoverLT] = useState("");
-  const [ids, setIDs] = useState(""),
-    [page, setPage] = useState<Page>(empty);
-  const [selected, setSelected] = useState<Imagery | null>(null),
-    [criteria, setCriteria] = useState<Search>({ catalog: "" });
-  const [loading, setLoading] = useState(false),
-    [error, setError] = useState("");
-  const [hasArea, setHasArea] = useState(false),
-    [mode, setMode] = useState<"draw" | "edit" | "">("");
-  const [areaChanged, setAreaChanged] = useState(false),
-    [searched, setSearched] = useState(false);
+  const [catalogs, setCatalogs] = useState<string[]>([]);
+  const [draft, setDraft] = useState<FilterDraft>(defaultFilters);
+  const [applied, setApplied] = useState<FilterDraft>(defaultFilters);
+  const [fieldErrors, setFieldErrors] = useState<FilterErrors>({});
+  const [page, setPage] = useState<Page>(empty);
+  const [selected, setSelected] = useState<Imagery | null>(null);
+  const [loading, setLoading] = useState(false), [error, setError] = useState("");
+  const [mode, setMode] = useState<"draw" | "edit" | "">("");
+  const [searched, setSearched] = useState(false);
+  const dirty = filterKey(draft) !== filterKey(applied);
+  const hasArea = !!draft.geometry;
+  const chips = appliedFilters(applied);
+  const draftGroups = new Set(appliedFilters(draft).map((chip) => chip.group));
 
-  async function run(next: Search, offset = 0) {
+  function cancelSearch() {
     active.current?.abort();
+    setLoading(false);
+  }
+  function changeDraft(next: FilterDraft | ((previous: FilterDraft) => FilterDraft)) {
+    cancelSearch();
+    setDraft(next);
+    setFieldErrors({});
+    setError("");
+  }
+  async function run(next: FilterDraft, offset = 0) {
+    cancelSearch();
+    const snapshot = structuredClone(next);
+    const { criteria, errors } = buildSearch(snapshot);
+    if (criteria.geometry) {
+      try { criteria.geometry = parseSearchArea(JSON.stringify(criteria.geometry)); }
+      catch (e) { errors.area = e instanceof Error ? e.message : "Invalid search area."; }
+    }
+    setFieldErrors(errors);
+    if (Object.keys(errors).length) return;
     const controller = new AbortController();
     active.current = controller;
     map.current?.stop();
@@ -64,22 +84,21 @@ function CatalogApp({ session }: { session: Session }) {
     setError("");
     setMode("");
     try {
-      const result = await search(token, next, offset, controller.signal);
-      if (controller.signal.aborted) return;
+      const result = await search(token, criteria, offset, controller.signal);
+      if (controller.signal.aborted || active.current !== controller) return;
       setPage(result);
       setSelected(null);
-      setCriteria(next);
+      setApplied(snapshot);
       setSearched(true);
-      setAreaChanged(false);
     } catch (e) {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted || active.current !== controller) return;
       if (e instanceof APIError && e.status === 401) {
         unauthorized();
         return;
       }
       setError(e instanceof Error ? e.message : "Could not reach the catalog.");
     } finally {
-      if (!controller.signal.aborted) setLoading(false);
+      if (!controller.signal.aborted && active.current === controller) setLoading(false);
     }
   }
   useEffect(() => {
@@ -98,7 +117,7 @@ function CatalogApp({ session }: { session: Session }) {
         }
         setError(e.message);
       });
-    void run({ catalog: "" });
+    void run(defaultFilters);
     return () => {
       controller.abort();
       active.current?.abort();
@@ -113,22 +132,10 @@ function CatalogApp({ session }: { session: Session }) {
   function loadArea(area: Area) {
     if (!map.current) throw new Error("The map is still loading. Try again in a moment.");
     map.current.loadArea(area);
-    // A pending search must not refit the map or mark this new area as searched.
-    active.current?.abort();
-    setLoading(false);
-    setSelected(null);
-    setError("");
   }
-  function apply(next: Search) {
-    try {
-      void run({ ...next, cloudCoverLT: parseCloudCoverLT(cloudCoverLT) });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Invalid scene cloud cover.");
-    }
-  }
-  function areaSearch() {
-    const geometry = map.current?.area();
-    if (geometry) apply({ catalog, geometry });
+  function clearArea() {
+    map.current?.clear();
+    setMode("");
   }
   function saveArea() {
     const geometry = map.current?.area();
@@ -176,69 +183,9 @@ function CatalogApp({ session }: { session: Session }) {
         </div>
       </header>
       {session.message && <Alert severity="warning" onClose={session.dismissMessage}>{session.message}</Alert>}
-      <div className="search-bar">
-        <div className="workspace-title">
-          <span className="eyebrow">YOUR COLLECTION</span>
-          <h1>Explore imagery</h1>
-        </div>
-        <form
-          className="id-search"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const imageIDs = ids
-              .split(/[\n,]+/)
-              .map((id) => id.trim())
-              .filter(Boolean);
-            if (imageIDs.length) apply({ catalog, ids: imageIDs });
-          }}
-        >
-          <TextField
-            select
-            label="Catalog"
-            size="small"
-            value={catalog}
-            onChange={(e) => setCatalog(e.target.value)}
-            className="catalog-input"
-          >
-            <MenuItem value="">All catalogs</MenuItem>
-            {catalogs.map((c) => (
-              <MenuItem key={c} value={c}>
-                {c}
-              </MenuItem>
-            ))}
-          </TextField>
-          <TextField
-            label="Scene cloud cover less than (%)"
-            type="number"
-            placeholder="Any"
-            size="small"
-            value={cloudCoverLT}
-            onChange={(e) => setCloudCoverLT(e.target.value)}
-            slotProps={{ htmlInput: { min: 0, max: 100, step: "any" }, inputLabel: { shrink: true } }}
-            className="cloud-cover-input"
-            helperText="Unknown cloud cover is excluded when filtering. Describes the whole scene, not the selected area."
-          />
-          <TextField
-            label="Exact image ID"
-            placeholder="ABC123, IMG002"
-            size="small"
-            value={ids}
-            onChange={(e) => setIDs(e.target.value)}
-            className="id-input"
-            helperText="Separate multiple IDs with commas"
-          />
-          <Button
-            type="submit"
-            variant="contained"
-            disabled={loading || !ids.trim()}
-          >
-            Search ID
-          </Button>
-          <Button onClick={() => apply({ catalog })} disabled={loading}>
-            Browse all
-          </Button>
-        </form>
-      </div>
+      <CatalogFilters draft={draft} catalogs={catalogs} errors={fieldErrors} dirty={dirty}
+        loading={loading} drawing={mode === "draw"} onChange={changeDraft}
+        onSearch={() => void run(draft)} onClearArea={clearArea} />
       {error && (
         <Alert severity="error" onClose={() => setError("")}>
           {error}
@@ -252,6 +199,7 @@ function CatalogApp({ session }: { session: Session }) {
                 size="small"
                 variant={mode === "draw" ? "contained" : "outlined"}
                 onClick={() => {
+                  cancelSearch();
                   map.current?.draw();
                   setMode("draw");
                 }}
@@ -275,26 +223,9 @@ function CatalogApp({ session }: { session: Session }) {
               >
                 Save GeoJSON
               </Button>
-              <Button
-                size="small"
-                onClick={() => {
-                  map.current?.clear();
-                  setCloudCoverLT("");
-                  setMode("");
-                  setAreaChanged(true);
-                }}
-              >
-                Clear
-              </Button>
+              <Button size="small" disabled={!hasArea && mode !== "draw"} onClick={clearArea}>Clear area</Button>
+              {mode && <Button size="small" onClick={() => { map.current?.stop(); setMode(""); }}>Done</Button>}
             </div>
-            <Button
-              size="small"
-              variant="contained"
-              disabled={!hasArea || loading || mode === "draw"}
-              onClick={areaSearch}
-            >
-              Search This Area
-            </Button>
           </div>
           <div className="map-wrap">
             <MapCanvas
@@ -303,25 +234,29 @@ function CatalogApp({ session }: { session: Session }) {
               items={page.items}
               selected={selected}
               onSelect={select}
-              onArea={(exists, editing) => {
-                setHasArea(exists);
-                setMode(editing ? (exists ? "edit" : "draw") : "");
-                setAreaChanged(true);
+              onArea={(geometry, editing) => {
+                setMode(editing ? (geometry ? "edit" : "draw") : "");
+                changeDraft((previous) => ({
+                  ...previous, geometry,
+                  scope: geometry ? (JSON.stringify(geometry) === JSON.stringify(previous.geometry) ? previous.scope : "area") : "anywhere",
+                }));
               }}
             />
             <div className="map-hint">
               {mode === "draw"
                 ? "Click to add vertices. Double-click to finish."
                 : mode === "edit"
-                  ? "Drag vertices to edit. Click Search This Area when ready."
-                  : areaChanged && hasArea
-                    ? "Area changed · click Search This Area to update results"
-                    : "Draw an area or paste GeoJSON to find intersecting imagery"}
+                  ? "Drag vertices to edit. Click Search catalog when ready."
+                  : dirty && draft.scope === "area"
+                    ? "Area ready · click Search catalog to apply your filters"
+                    : hasArea && draft.scope === "anywhere"
+                      ? "Polygon retained · choose Use drawn or loaded area to filter"
+                      : "Draw an area or load GeoJSON to find intersecting imagery"}
             </div>
             <div className="map-legend">
               <span>
                 <i className="swatch aoi" />
-                Search area
+                Draft area
               </span>
               <span>
                 <i className="swatch result" />
@@ -369,24 +304,24 @@ function CatalogApp({ session }: { session: Session }) {
           <div className="results-heading">
             <div>
               <span className="eyebrow">CATALOG MATCHES</span>
-              <h2>
-                Results{" "}
-                <span className="count">
-                  {page.items.length}
-                  {page.has_more ? "+" : ""}
-                </span>
-              </h2>
+              <h2>Results</h2>
             </div>
             {loading && <CircularProgress size={22} aria-label="Searching" />}
           </div>
           <div className="result-context">
-            {criteria.geometry
-              ? "Intersecting the searched area"
-              : criteria.ids
-                ? "Exact ID matches"
-                : "Browsing imagery"}
-            {criteria.catalog ? ` · ${criteria.catalog}` : " · All catalogs"}
-            {criteria.cloudCoverLT !== undefined ? ` · Scene cloud cover < ${criteria.cloudCoverLT}%` : ""}
+            <span>{searched ? "Applied filters" : "Loading catalog"}</span>
+            <div className="applied-filters" aria-label="Applied filters">
+              {chips.length ? chips.map(({ group, label }) => {
+                const pending = !draftGroups.has(group);
+                return <button key={group} type="button" className={pending ? "filter-chip pending-removal" : "filter-chip"}
+                  aria-label={pending ? `Removal pending: ${label}` : `Remove ${label}`}
+                  aria-disabled={pending} title={pending ? "Removal pending · search to apply" : label}
+                  onClick={() => { if (!pending) changeDraft(removeFilter(draft, group)); }}>
+                  {label}<span aria-hidden="true">{pending ? " · pending" : " ×"}</span>
+                </button>;
+              }) : <span>All imagery · no filters</span>}
+            </div>
+            {dirty && <span className="filter-pending">Changes not applied · results show the previous search</span>}
           </div>
           <div className="results-scroll" aria-busy={loading}>
             {!page.items.length ? (
@@ -395,16 +330,16 @@ function CatalogApp({ session }: { session: Session }) {
                 <h3>
                   {loading
                     ? "Searching the catalog…"
-                    : criteria.geometry || criteria.ids || criteria.cloudCoverLT !== undefined
+                    : chips.length > 0
                       ? "No matching imagery"
                       : "Your map starts here"}
                 </h3>
                 <p>
-                  {criteria.geometry || criteria.ids || criteria.cloudCoverLT !== undefined
-                    ? "Try another area, image ID, catalog, or cloud-cover threshold."
+                  {chips.length > 0
+                    ? "Try a wider date range, another area or ID, a higher cloud limit, or include unknown cloud cover."
                     : "Import local GeoTIFFs to discover your collection on the map."}
                 </p>
-                {!criteria.geometry && !criteria.ids && criteria.cloudCoverLT === undefined && (
+                {!chips.length && (
                   <code>aarde import ./data --recursive</code>
                 )}
               </div>
@@ -413,7 +348,7 @@ function CatalogApp({ session }: { session: Session }) {
                 <thead>
                   <tr>
                     <th>Image / catalog</th>
-                    <th>Acquired</th>
+                    <th>Acquired · UTC / clouds</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -436,10 +371,11 @@ function CatalogApp({ session }: { session: Session }) {
                       </td>
                       <td>
                         {item.acquired_at ? (
-                          new Date(item.acquired_at).toLocaleDateString()
+                          new Date(item.acquired_at).toLocaleDateString(undefined, { timeZone: "UTC" })
                         ) : (
                           <span className="muted">Unknown</span>
                         )}
+                        <span className="result-cloud">Clouds: {item.cloud_cover == null ? "Unknown" : `${item.cloud_cover}%`}</span>
                       </td>
                     </tr>
                   ))}
@@ -450,23 +386,23 @@ function CatalogApp({ session }: { session: Session }) {
           <div className="pagination">
             <span aria-live="polite">
               {searched && page.items.length
-                ? `${page.offset + 1}-${page.offset + page.items.length}${page.has_more ? " · more available" : ""}`
+                ? `Showing ${page.offset + 1}–${page.offset + page.items.length}${page.has_more ? " · more available" : ""}`
                 : "0 images"}
             </span>
             <div>
               <Button
                 size="small"
-                disabled={loading || !page.offset}
+                disabled={loading || dirty || mode === "draw" || !page.offset}
                 onClick={() =>
-                  void run(criteria, Math.max(0, page.offset - page.limit))
+                  void run(applied, Math.max(0, page.offset - page.limit))
                 }
               >
                 Previous
               </Button>
               <Button
                 size="small"
-                disabled={loading || !page.has_more}
-                onClick={() => void run(criteria, page.offset + page.limit)}
+                disabled={loading || dirty || mode === "draw" || !page.has_more}
+                onClick={() => void run(applied, page.offset + page.limit)}
               >
                 Next
               </Button>

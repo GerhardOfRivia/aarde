@@ -265,7 +265,7 @@
               "minimum": 0,
               "maximum": 100
             },
-            "description": "Reported scene cloud cover strictly less than this percentage (0\u2013100, not a fraction). Finite numbers only. Active filtering excludes unknown cloud cover; 0 matches no imagery and 100 excludes fully cloudy imagery. Describes the whole scene, not cloud cover within the selected area. Combined with other filters using AND before ordering and pagination. Omit for any cloud cover, including unknown values. An empty value is invalid.",
+            "description": "Reported scene cloud cover strictly less than this finite percentage (0\u2013100). Zero matches no known values; 100 excludes fully cloudy scenes. Cannot be combined with cloud_cover_lte. Unknown values are excluded by default when a threshold is supplied; cloud_cover_unknown overrides this. All filters combine with AND before ordering and pagination. Omit for no threshold. An empty query value is invalid.",
             "example": 20
           },
           {
@@ -291,6 +291,51 @@
               "default": 0
             },
             "description": "Number of records to skip."
+          },
+          {
+            "name": "cloud_cover_lte",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "description": "Reported scene cloud cover at most this finite percentage (0\u2013100). Includes the exact boundary, including 0 and 100. Cannot be combined with cloud_cover_lt. Unknown values are excluded by default; use cloud_cover_unknown=include to retain them. Describes the whole scene, not clouds within the search area. An empty query value is invalid."
+          },
+          {
+            "name": "cloud_cover_unknown",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "exclude",
+                "include",
+                "only"
+              ]
+            },
+            "description": "Unknown cloud-cover policy. Defaults to exclude with either threshold and include otherwise. exclude without a threshold returns only known values; only returns unknown values and cannot be combined with either threshold. An empty query value is invalid."
+          },
+          {
+            "name": "acquired_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Inclusive acquisition timestamp (RFC3339). A date bound excludes imagery with unknown acquisition time. Must precede acquired_before when both are supplied. An empty query value is invalid."
+          },
+          {
+            "name": "acquired_before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Exclusive acquisition timestamp (RFC3339). For an inclusive Through day, send midnight UTC of the following day. A date bound excludes imagery with unknown acquisition time. An empty query value is invalid."
           }
         ]
       },
@@ -308,7 +353,7 @@
             "description": "A valid aarde web token is required"
           },
           "400": {
-            "description": "Invalid pagination, catalog/image ID, or cloud_cover_lt. The cloud-cover threshold must be a finite number between 0 and 100; an empty query value is invalid."
+            "description": "Invalid pagination, IDs, date bounds, cloud thresholds, or unknown-cloud policy."
           },
           "500": {
             "description": "catalog request failed"
@@ -352,7 +397,7 @@
               "minimum": 0,
               "maximum": 100
             },
-            "description": "Reported scene cloud cover strictly less than this percentage (0\u2013100, not a fraction). Finite numbers only. Active filtering excludes unknown cloud cover; 0 matches no imagery and 100 excludes fully cloudy imagery. Describes the whole scene, not cloud cover within the selected area. Combined with other filters using AND before ordering and pagination. Omit for any cloud cover, including unknown values. An empty value is invalid.",
+            "description": "Reported scene cloud cover strictly less than this finite percentage (0\u2013100). Zero matches no known values; 100 excludes fully cloudy scenes. Cannot be combined with cloud_cover_lte. Unknown values are excluded by default when a threshold is supplied; cloud_cover_unknown overrides this. All filters combine with AND before ordering and pagination. Omit for no threshold. An empty query value is invalid.",
             "example": 20
           },
           {
@@ -378,6 +423,51 @@
               "default": 0
             },
             "description": "Number of records to skip."
+          },
+          {
+            "name": "cloud_cover_lte",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "description": "Reported scene cloud cover at most this finite percentage (0\u2013100). Includes the exact boundary, including 0 and 100. Cannot be combined with cloud_cover_lt. Unknown values are excluded by default; use cloud_cover_unknown=include to retain them. Describes the whole scene, not clouds within the search area. An empty query value is invalid."
+          },
+          {
+            "name": "cloud_cover_unknown",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "exclude",
+                "include",
+                "only"
+              ]
+            },
+            "description": "Unknown cloud-cover policy. Defaults to exclude with either threshold and include otherwise. exclude without a threshold returns only known values; only returns unknown values and cannot be combined with either threshold. An empty query value is invalid."
+          },
+          {
+            "name": "acquired_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Inclusive acquisition timestamp (RFC3339). A date bound excludes imagery with unknown acquisition time. Must precede acquired_before when both are supplied. An empty query value is invalid."
+          },
+          {
+            "name": "acquired_before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Exclusive acquisition timestamp (RFC3339). For an inclusive Through day, send midnight UTC of the following day. A date bound excludes imagery with unknown acquisition time. An empty query value is invalid."
           }
         ]
       }
@@ -836,8 +926,59 @@
             ],
             "minimum": 0,
             "maximum": 100,
-            "description": "Reported scene cloud cover strictly less than this percentage (0\u2013100, not a fraction). Finite numbers only. Active filtering excludes unknown cloud cover; 0 matches no imagery and 100 excludes fully cloudy imagery. Describes the whole scene, not cloud cover within the selected area. Combined with other filters using AND before ordering and pagination. Omit or pass null for any cloud cover, including unknown values.",
+            "description": "Reported scene cloud cover strictly less than this finite percentage (0\u2013100). Zero matches no known values; 100 excludes fully cloudy scenes. Cannot be combined with cloud_cover_lte. Unknown values are excluded by default when a threshold is supplied; cloud_cover_unknown overrides this. All filters combine with AND before ordering and pagination. Omit or pass null for no threshold.",
             "example": 20
+          },
+          "cloud_cover_lte": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Reported scene cloud cover at most this finite percentage (0\u2013100). Includes the exact boundary, including 0 and 100. Cannot be combined with cloud_cover_lt. Unknown values are excluded by default; use cloud_cover_unknown=include to retain them. Describes the whole scene, not clouds within the search area. Omit or pass null for the default."
+          },
+          "cloud_cover_unknown": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "exclude",
+              "include",
+              "only",
+              null
+            ],
+            "description": "Unknown cloud-cover policy. Defaults to exclude with either threshold and include otherwise. exclude without a threshold returns only known values; only returns unknown values and cannot be combined with either threshold. Omit or pass null for the default."
+          },
+          "acquired_from": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Inclusive acquisition timestamp (RFC3339). A date bound excludes imagery with unknown acquisition time. Must precede acquired_before when both are supplied. Omit or pass null for the default."
+          },
+          "acquired_before": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Exclusive acquisition timestamp (RFC3339). For an inclusive Through day, send midnight UTC of the following day. A date bound excludes imagery with unknown acquisition time. Omit or pass null for the default."
+          },
+          "image_ids": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "maxItems": 100,
+            "description": "Exact, case-sensitive image IDs, matching any listed ID and all other filters. IDs follow the same byte and character restrictions as GET image_id. Omit, use null, or an empty array for any ID."
           }
         },
         "example": {
@@ -870,8 +1011,64 @@
           },
           "limit": 50,
           "offset": 0,
-          "cloud_cover_lt": 20
-        }
+          "cloud_cover_lte": 20,
+          "cloud_cover_unknown": "include",
+          "acquired_from": "2026-06-01T00:00:00Z",
+          "acquired_before": "2026-09-30T00:00:00Z"
+        },
+        "description": "Intersecting geometry is required. Exact image IDs match by OR; all filter groups combine with AND before stable import-time ordering and pagination. Date bounds and cloud semantics match GET /imagery.",
+        "allOf": [
+          {
+            "not": {
+              "required": [
+                "cloud_cover_lt",
+                "cloud_cover_lte"
+              ],
+              "properties": {
+                "cloud_cover_lt": {
+                  "type": "number"
+                },
+                "cloud_cover_lte": {
+                  "type": "number"
+                }
+              }
+            }
+          },
+          {
+            "not": {
+              "required": [
+                "cloud_cover_unknown"
+              ],
+              "properties": {
+                "cloud_cover_unknown": {
+                  "const": "only"
+                }
+              },
+              "anyOf": [
+                {
+                  "required": [
+                    "cloud_cover_lt"
+                  ],
+                  "properties": {
+                    "cloud_cover_lt": {
+                      "type": "number"
+                    }
+                  }
+                },
+                {
+                  "required": [
+                    "cloud_cover_lte"
+                  ],
+                  "properties": {
+                    "cloud_cover_lte": {
+                      "type": "number"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
       },
       "Imagery": {
         "type": "object",
@@ -1124,7 +1321,7 @@
         }
       },
       "InvalidRequest": {
-        "description": "Invalid pagination, catalog/image ID, or cloud_cover_lt. The cloud-cover threshold must be a finite number between 0 and 100; an empty query value is invalid.",
+        "description": "Invalid pagination, catalog/image IDs, RFC3339 date bounds, cloud thresholds, or cloud_cover_unknown policy. Thresholds must be finite percentages from 0 to 100 and cannot be combined. Unknown-only cannot be combined with a threshold. Spatial search requires valid polygon geometry and a single JSON object with known fields.",
         "content": {
           "application/json": {
             "schema": {
@@ -1140,7 +1337,7 @@
         }
       },
       "InvalidSearch": {
-        "description": "Invalid JSON (invalid_json), invalid geometry or topology (invalid_geometry), or invalid pagination/catalog ID/cloud_cover_lt (invalid_request). The cloud-cover threshold must be a finite number between 0 and 100, or null. Unknown body and geometry fields and extra JSON values are rejected.",
+        "description": "Invalid pagination, catalog/image IDs, RFC3339 date bounds, cloud thresholds, or cloud_cover_unknown policy. Thresholds must be finite percentages from 0 to 100 and cannot be combined. Unknown-only cannot be combined with a threshold. Spatial search requires valid polygon geometry and a single JSON object with known fields.",
         "content": {
           "application/json": {
             "schema": {

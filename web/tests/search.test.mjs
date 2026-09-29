@@ -72,3 +72,27 @@ test("cleared input omits the filter in the next GET or spatial search", async (
     if (spatial) assert.equal(Object.hasOwn(JSON.parse(options.body), "cloud_cover_lt"), false);
   }
 });
+
+test("new metadata filters and exact IDs are identical across GET and spatial POST pages", async (t) => {
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    calls.push({ url: new URL(url, "http://aarde.test"), options });
+    return new Response(JSON.stringify({ items: [], limit: 50, offset: 50, has_more: false }));
+  });
+  for (const cloudCoverUnknown of [undefined, "include", "exclude", "only"]) {
+    for (const spatial of [false, true]) {
+      for (const offset of [0, 50, 100]) {
+        const criteria = { catalog: "demo", ids: ["one", "two"], acquiredFrom: "2026-06-01T00:00:00Z", acquiredBefore: "2026-09-30T00:00:00Z", cloudCoverLTE: cloudCoverUnknown === "only" ? undefined : 19.9, cloudCoverUnknown, ...(spatial ? { geometry } : {}) };
+        await search("", criteria, offset, new AbortController().signal);
+        const { url, options } = calls.at(-1);
+        const wire = spatial ? JSON.parse(options.body) : Object.fromEntries(url.searchParams);
+        assert.equal(wire.acquired_from, criteria.acquiredFrom);
+        assert.equal(wire.acquired_before, criteria.acquiredBefore);
+        assert.equal(wire.cloud_cover_unknown, cloudCoverUnknown);
+        assert.equal(wire.cloud_cover_lte === undefined ? undefined : Number(wire.cloud_cover_lte), criteria.cloudCoverLTE);
+        assert.equal(Number(wire.offset), offset);
+        assert.deepEqual(spatial ? wire.image_ids : url.searchParams.getAll("image_id"), criteria.ids);
+      }
+    }
+  }
+});

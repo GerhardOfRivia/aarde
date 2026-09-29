@@ -6,6 +6,7 @@ import (
 	"math"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/GerhardOfRivia/aarde/internal/geo"
 )
@@ -69,5 +70,50 @@ func TestNormalizeCloudCoverLT(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "cloud_cover_lt") {
 			t.Errorf("accepted %v: %v", value, err)
 		}
+	}
+}
+
+func TestNormalizeMetadataFilters(t *testing.T) {
+	zero, twenty, bad := 0.0, 20.0, math.NaN()
+	start := time.Date(2026, 9, 29, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+	for _, tc := range []struct {
+		name            string
+		query           Query
+		policy, invalid string
+	}{
+		{"default", Query{}, "include", ""},
+		{"inclusive zero", Query{CloudCoverLTE: &zero}, "exclude", ""},
+		{"legacy default", Query{CloudCoverLT: &twenty}, "exclude", ""},
+		{"include legacy unknown", Query{CloudCoverLT: &twenty, CloudCoverUnknown: "include"}, "include", ""},
+		{"only unknown", Query{CloudCoverUnknown: "only"}, "only", ""},
+		{"known only", Query{CloudCoverUnknown: "exclude"}, "exclude", ""},
+		{"both thresholds", Query{CloudCoverLT: &zero, CloudCoverLTE: &twenty}, "", "cloud_cover_lt"},
+		{"only and inclusive", Query{CloudCoverUnknown: "only", CloudCoverLTE: &zero}, "", "cloud_cover_unknown"},
+		{"only and strict", Query{CloudCoverUnknown: "only", CloudCoverLT: &zero}, "", "cloud_cover_unknown"},
+		{"unknown policy", Query{CloudCoverUnknown: "invalid"}, "", "cloud_cover_unknown"},
+		{"nonfinite", Query{CloudCoverLTE: &bad}, "", "cloud_cover_lte"},
+		{"date range", Query{AcquiredFrom: &start, AcquiredBefore: &end}, "include", ""},
+		{"open from", Query{AcquiredFrom: &start}, "include", ""},
+		{"open before", Query{AcquiredBefore: &end}, "include", ""},
+		{"equal dates", Query{AcquiredFrom: &start, AcquiredBefore: &start}, "", "acquired_before"},
+		{"reversed dates", Query{AcquiredFrom: &end, AcquiredBefore: &start}, "", "acquired_before"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			q := tc.query
+			err := NormalizeQuery(&q)
+			if tc.invalid != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.invalid) {
+					t.Fatalf("wanted %s error, got %v", tc.invalid, err)
+				}
+				return
+			}
+			if err != nil || q.CloudCoverUnknown != tc.policy {
+				t.Fatalf("%+v: %v", q, err)
+			}
+			if err := NormalizeQuery(&q); err != nil || q.CloudCoverUnknown != tc.policy {
+				t.Fatalf("normalization not idempotent: %+v %v", q, err)
+			}
+		})
 	}
 }

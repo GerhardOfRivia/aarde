@@ -23,13 +23,13 @@ docker compose exec aarde aarde import /data --recursive
 docker compose exec -T aarde cat /home/aarde/.local/state/aarde/web.token
 ```
 
-Select a catalog, click **Draw Area**, click vertices on the map, and double-click to finish. Click **Search This Area** to find images whose footprints intersect that polygon. Select a row or a footprint to inspect metadata. **Edit Area** changes vertices; searches run only when explicitly requested. **Clear** removes the drawing and clears the cloud-cover input, leaving the last results visible until you search again. Use **Browse all** to browse with the selected catalog and cloud-cover threshold. Exact image IDs can be entered individually or comma-separated.
+Select a catalog and set optional area, acquisition-date, or cloud filters, then click **Search catalog**. To draw an area, click **Draw Area**, click vertices on the map, and double-click to finish. Select a result or footprint to inspect metadata. **Edit Area** changes vertices; searches run only when explicitly requested. **Clear area** removes only the spatial condition. **Reset filters** clears metadata and catalog while preserving the drawn area and spatial scope. Exact image IDs are available under **More filters**.
 
-To use an existing boundary, choose **Paste GeoJSON**, paste a WGS84 Polygon or MultiPolygon, and click **Load Area**. A polygon Feature or a FeatureCollection containing only polygon Features also works; multiple features become one MultiPolygon search area. The map fits the loaded area, which can be adjusted with **Edit Area**. Click **Search This Area** to search the selected catalog. Loading replaces the current area and keeps existing results until you search. Invalid JSON, unsupported geometries, open rings, out-of-range coordinates, and oversized areas show an error without replacing the existing area. PostGIS checks polygon topology when the search runs.
+To use an existing boundary, choose **Paste GeoJSON**, paste a WGS84 Polygon or MultiPolygon, and click **Load Area**. A polygon Feature or a FeatureCollection containing only polygon Features also works; multiple features become one MultiPolygon search area. The map fits the loaded area, which can be adjusted with **Edit Area**. Click **Search catalog** to apply the area and other filters. Loading replaces the current area and keeps existing results until you search. Invalid JSON, unsupported geometries, open rings, out-of-range coordinates, and oversized areas show an error without replacing the existing area. PostGIS checks polygon topology when the search runs.
 
 Choose **Save GeoJSON** to download the current search area to your device as `aarde-search-area.geojson`. The file contains the drawn or loaded Polygon/MultiPolygon in WGS84 longitude/latitude coordinates, including holes and any edits, and can be reused with **Paste GeoJSON**. Saving is available once an area is loaded or drawing is finished; no search is required.
 
-**Scene cloud cover less than (%)** accepts an optional decimal percentage from 0 to 100. Empty means **Any**. Apply it with **Search ID**, **Browse all**, or **Search This Area**; a new search starts on the first page, and pagination keeps the applied filters. Unknown cloud cover is excluded while filtering. This is reported cloud cover for the whole scene, not cloud cover within your selected area.
+**Scene cloud cover** offers **Any cloud cover**, **At most**, and **Unknown only**. At most accepts decimal percentages from 0 to 100 and includes the selected boundary. **Include unknown cloud cover** broadens a maximum filter. Acquisition dates include whole UTC days; unknown dates are excluded while date bounds are set. Unapplied edits preserve the previous results and disable pagination. Each successful search starts on page one. Cloud cover describes the whole scene, not just the selected area.
 
 No imagery yet? Generate a tiny synthetic GeoTIFF for trying the workflow:
 
@@ -231,8 +231,8 @@ Routes are under `/api/v1`. All reads require the bearer token unless public rea
 | GET | `/health` | Database readiness; 503 when unavailable |
 | GET | `/catalogs` | `{ "items": ["default"] }`; catalogs with imagery |
 | GET | `/imagery/{catalogID}/{imageID}` | Exact record; 404 if absent |
-| GET | `/imagery` | Filter by `catalog_id`, repeated `image_id`, `cloud_cover_lt`, `limit`, `offset` |
-| POST | `/imagery/search` | Polygon or MultiPolygon intersection search; optional `catalog_id` and `cloud_cover_lt` |
+| GET | `/imagery` | Filter by catalog, repeated image IDs, acquisition dates, scene clouds, and pagination |
+| POST | `/imagery/search` | Polygon or MultiPolygon intersection search with the same metadata filters and optional `image_ids` |
 
 ```sh
 # Docker; for a native server, read the token_file path from its startup log.
@@ -250,7 +250,23 @@ curl -X POST http://localhost:8080/api/v1/imagery/search \
 
 Omit `catalog_id` to search all catalogs. List/search responses are `{ "items": [...], "limit": 50, "offset": 0, "has_more": false }`. Pagination is ordered by import time descending, then UUID; concurrent imports can shift offset-based pages. Limits default to 50 and are capped at 200. At most 100 exact IDs, 10,000 geometry positions, a 1 MiB request body, and offset 1,000,000 are accepted. Unknown search body fields, extra JSON values, invalid rings, out-of-range coordinates, and unsupported geometry types are rejected. PostGIS validates polygon topology, including self-intersections.
 
-`cloud_cover_lt` is an optional finite percentage from 0 to 100 (not a 0-1 fraction), accepted by GET listing and the spatial-search JSON body. Omission, or JSON `null`, preserves all existing matches including unknown cloud cover. A threshold of `20` includes `0` and `19.9`, but excludes `20`, `100`, and unknown values. `0` is valid and matches no imagery; `100` excludes values equal to 100 and unknown values. Empty GET values, malformed numbers, NaN, infinities, and values outside 0-100 return HTTP 400. The database combines this scene-level metadata filter with catalog, image-ID, and spatial predicates using AND before ordering and pagination; `has_more` reflects only matching imagery. Search never reads raster files or estimates cloud cover within the selected area.
+`cloud_cover_lt` is an optional finite percentage from 0 to 100 (not a 0-1 fraction), accepted by GET listing and the spatial-search JSON body. Omission, or JSON `null`, preserves all existing matches including unknown cloud cover unless an explicit `cloud_cover_unknown` policy is supplied. A threshold of `20` includes `0` and `19.9`, but excludes `20`, `100`, and unknown values. `0` is valid and matches no imagery; `100` excludes values equal to 100 and unknown values. Empty GET values, malformed numbers, NaN, infinities, and values outside 0-100 return HTTP 400. The database combines this scene-level metadata filter with catalog, image-ID, and spatial predicates using AND before ordering and pagination; `has_more` reflects only matching imagery. Search never reads raster files or estimates cloud cover within the selected area.
+
+The catalog editor combines Catalog, Area, Acquired date, and Scene cloud cover in one explicit **Search catalog** action. **More filters** retains exact image IDs (OR between IDs, AND with other groups). Drawing, presets, resets, and chip removal only change the draft. Applied chips, rows, and footprints stay on the last successful search; pagination is disabled while changes are pending. **Clear area** preserves metadata filters, while **Reset filters** preserves the polygon and chosen spatial scope. Cloud percentage and acquisition date (UTC) appear on each result.
+
+Both search endpoints also accept:
+
+| Parameter | Semantics |
+| --- | --- |
+| `acquired_from` | Inclusive RFC3339 acquisition instant |
+| `acquired_before` | Exclusive RFC3339 acquisition instant; must be after `acquired_from` |
+| `cloud_cover_lte` | Inclusive maximum percentage, 0–100; cannot accompany `cloud_cover_lt` |
+| `cloud_cover_unknown` | `exclude`, `include`, or `only`; defaults to exclude with a threshold and include otherwise |
+
+`only` cannot accompany either cloud threshold. `exclude` without a threshold returns all known cloud percentages. Unknown acquisition times are excluded when either date bound is set. The UI interprets From and Through as whole UTC days: June 1 through September 29 sends `acquired_from=2026-06-01T00:00:00Z` and `acquired_before=2026-09-30T00:00:00Z`. Cloud **At most 0%** includes recorded zero; **At most 100%** includes fully cloudy scenes. Include unknown is an explicit opt-in with a maximum. Existing CLI `--cloud-cover-lt` behavior remains strict.
+
+Spatial POST additionally accepts `image_ids` as an array of up to 100 IDs and continues to require `geometry`. New JSON metadata fields can be omitted or null to use their defaults; empty GET values are invalid. Filters execute in SQL before pagination. Results remain ordered by import time descending, then UUID; the UI reports a page range and `more available`, not an exact total.
+
 
 See the [GDAL JSON inspection documentation](https://gdal.org/en/stable/programs/gdalinfo.html) and [PostGIS ST_Intersects reference](https://postgis.net/docs/ST_Intersects.html).
 

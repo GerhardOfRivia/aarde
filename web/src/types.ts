@@ -31,6 +31,10 @@ export interface Search {
   ids?: string[];
   geometry?: Area;
   cloudCoverLT?: number;
+  cloudCoverLTE?: number;
+  cloudCoverUnknown?: "include" | "exclude" | "only";
+  acquiredFrom?: string;
+  acquiredBefore?: string;
 }
 
 export interface AccessInfo {
@@ -93,6 +97,11 @@ export function search(
       body: JSON.stringify({
         catalog_id: criteria.catalog,
         geometry: criteria.geometry,
+        image_ids: criteria.ids,
+        acquired_from: criteria.acquiredFrom,
+        acquired_before: criteria.acquiredBefore,
+        cloud_cover_lte: criteria.cloudCoverLTE,
+        cloud_cover_unknown: criteria.cloudCoverUnknown,
         cloud_cover_lt: criteria.cloudCoverLT,
         limit: 50,
         offset,
@@ -100,6 +109,10 @@ export function search(
     });
   const query = new URLSearchParams({ limit: "50", offset: String(offset) });
   if (criteria.cloudCoverLT !== undefined) query.set("cloud_cover_lt", String(criteria.cloudCoverLT));
+  if (criteria.cloudCoverLTE !== undefined) query.set("cloud_cover_lte", String(criteria.cloudCoverLTE));
+  if (criteria.cloudCoverUnknown) query.set("cloud_cover_unknown", criteria.cloudCoverUnknown);
+  if (criteria.acquiredFrom) query.set("acquired_from", criteria.acquiredFrom);
+  if (criteria.acquiredBefore) query.set("acquired_before", criteria.acquiredBefore);
   if (criteria.catalog) query.set("catalog_id", criteria.catalog);
   criteria.ids?.forEach((id) => query.append("image_id", id));
   return request(`/api/v1/imagery?${query}`, token, { signal });

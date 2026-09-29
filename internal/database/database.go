@@ -197,9 +197,29 @@ func (r *Repository) Search(ctx context.Context, q catalog.Query) (catalog.Page,
 		args = append(args, string(q.Geometry.JSON()))
 		where += fmt.Sprintf(" AND ST_Intersects(footprint, ST_SetSRID(ST_GeomFromGeoJSON($%d),4326))", len(args))
 	}
-	if q.CloudCoverLT != nil {
-		args = append(args, *q.CloudCoverLT)
-		where += fmt.Sprintf(" AND cloud_cover < $%d", len(args))
+	if q.AcquiredFrom != nil {
+		args = append(args, *q.AcquiredFrom)
+		where += fmt.Sprintf(" AND acquired_at >= $%d", len(args))
+	}
+	if q.AcquiredBefore != nil {
+		args = append(args, *q.AcquiredBefore)
+		where += fmt.Sprintf(" AND acquired_at < $%d", len(args))
+	}
+	threshold, operator := q.CloudCoverLT, "<"
+	if q.CloudCoverLTE != nil {
+		threshold, operator = q.CloudCoverLTE, "<="
+	}
+	if threshold != nil {
+		args = append(args, *threshold)
+		predicate := fmt.Sprintf("cloud_cover %s $%d", operator, len(args))
+		if q.CloudCoverUnknown == "include" {
+			predicate += " OR cloud_cover IS NULL"
+		}
+		where += " AND (" + predicate + ")"
+	} else if q.CloudCoverUnknown == "only" {
+		where += " AND cloud_cover IS NULL"
+	} else if q.CloudCoverUnknown == "exclude" {
+		where += " AND cloud_cover IS NOT NULL"
 	}
 	args = append(args, q.Limit+1, q.Offset)
 	query := "SELECT " + columns + " FROM imagery" + where + fmt.Sprintf(" ORDER BY imported_at DESC, id ASC LIMIT $%d OFFSET $%d", len(args)-1, len(args))

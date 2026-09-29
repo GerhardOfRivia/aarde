@@ -38,7 +38,7 @@ export function GeoJSONInput({ onLoad }: { onLoad(area: Area): void }) {
             <DialogContentText id="geojson-description" sx={{ mb: 2 }}>
               Paste a Polygon or MultiPolygon in longitude/latitude coordinates.
               Features and FeatureCollections containing only polygons are also supported.
-              Loading replaces the current search area; then choose Search This Area.
+              Loading replaces the current search area; then choose Search catalog.
             </DialogContentText>
             <TextField
               id="geojson-input"
