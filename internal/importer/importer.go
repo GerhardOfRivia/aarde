@@ -33,7 +33,7 @@ type Runner struct {
 func ImageID(path string) string { return strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)) }
 func supported(path string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
-	return ext == ".tif" || ext == ".tiff"
+	return ext == ".tif" || ext == ".tiff" || ext == ".ntf" || ext == ".nitf"
 }
 
 func Discover(ctx context.Context, path string, recursive bool) ([]string, int, error) {

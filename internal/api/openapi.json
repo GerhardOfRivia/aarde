@@ -938,7 +938,7 @@
             "description": "Source CRS in WKT."
           },
           "metadata": {
-            "description": "GDAL metadata stored as JSON."
+            "description": "Selected GDAL metadata domains preserved as JSON, including object and XML values. The reserved _aarde namespace contains format, georeferencing, and footprint-method annotations; handling markings are metadata, not access controls."
           },
           "cloud_cover": {
             "type": [
@@ -948,6 +948,18 @@
             "minimum": 0,
             "maximum": 100,
             "description": "Reported scene cloud-cover percentage (0\u2013100, not a fraction); null when unknown. Describes the whole scene, not the selected area."
+          },
+          "format": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "GTiff",
+              "NITF",
+              null
+            ],
+            "description": "GDAL-detected source format, stored at import. Null for records imported before format annotations; never inferred from the filename."
           }
         },
         "required": [
@@ -966,7 +978,8 @@
           "band_count",
           "source_crs",
           "metadata",
-          "cloud_cover"
+          "cloud_cover",
+          "format"
         ],
         "example": {
           "id": "c77f4d82-ef3d-44b9-b027-c6fc30b60c53",
@@ -1012,7 +1025,8 @@
           "band_count": 3,
           "source_crs": "GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563]],PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433]]",
           "metadata": {},
-          "cloud_cover": null
+          "cloud_cover": null,
+          "format": null
         }
       },
       "SearchResponse": {

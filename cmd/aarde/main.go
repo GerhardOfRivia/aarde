@@ -30,7 +30,7 @@ const usage = `Aarde — local imagery, spatial discovery
 Usage:
   aarde serve
   aarde import <file-or-directory> [--recursive] [--dry-run] [--catalog default] [--cloud-cover percent]
-  aarde inspect <image.tif>
+  aarde inspect <image.tif|image.ntf|image.nitf>
   aarde search --id <exact-ID> [--catalog default] [--cloud-cover-lt percent] [--limit 50] [--offset 0]
   aarde version
 
@@ -99,7 +99,7 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		return server.Run(ctx, cfg.ListenAddress, catalog.New(db), version, tokenPath, cfg.WebPublicRead, cfg.WebBasemap)
 	case "inspect":
 		if len(args) != 2 {
-			return errors.New("usage: aarde inspect <image.tif>")
+			return errors.New("usage: aarde inspect <image.tif|image.ntf|image.nitf>")
 		}
 		i, err := raster.Inspect(ctx, args[1])
 		if err != nil {

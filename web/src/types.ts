@@ -2,6 +2,7 @@ import type { Polygon, MultiPolygon } from "geojson";
 export type Area = Polygon | MultiPolygon;
 export type Basemap = "osm" | "none";
 export interface Imagery {
+  format: "GTiff" | "NITF" | null;
   id: string;
   catalog_id: string;
   image_id: string;

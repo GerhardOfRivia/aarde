@@ -21,6 +21,7 @@ type Handler struct{ catalog *catalog.Service }
 
 // Explicit DTOs keep wire representations out of the catalog model.
 type ImageryResponse struct {
+	Format        *string         `json:"format"`
 	ID            string          `json:"id"`
 	CatalogID     string          `json:"catalog_id"`
 	ImageID       string          `json:"image_id"`
@@ -46,7 +47,7 @@ type SearchResponse struct {
 }
 
 func Response(i catalog.Imagery) ImageryResponse {
-	return ImageryResponse{ID: i.ID.String(), CatalogID: i.CatalogID, ImageID: i.ImageID, DisplayName: i.DisplayName, AcquiredAt: i.AcquiredAt, CloudCover: i.CloudCover, ImportedAt: i.ImportedAt, CreatedAt: i.CreatedAt, Footprint: i.Footprint, Checksum: i.Checksum, AssetLocation: i.AssetLocation, Width: i.Width, Height: i.Height, BandCount: i.BandCount, SourceCRS: i.SourceCRS, Metadata: i.Metadata}
+	return ImageryResponse{Format: i.Format(), ID: i.ID.String(), CatalogID: i.CatalogID, ImageID: i.ImageID, DisplayName: i.DisplayName, AcquiredAt: i.AcquiredAt, CloudCover: i.CloudCover, ImportedAt: i.ImportedAt, CreatedAt: i.CreatedAt, Footprint: i.Footprint, Checksum: i.Checksum, AssetLocation: i.AssetLocation, Width: i.Width, Height: i.Height, BandCount: i.BandCount, SourceCRS: i.SourceCRS, Metadata: i.Metadata}
 }
 func PageResponse(p catalog.Page) SearchResponse {
 	out := SearchResponse{Items: []ImageryResponse{}, Limit: p.Limit, Offset: p.Offset, HasMore: p.HasMore}

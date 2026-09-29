@@ -43,31 +43,70 @@ type info struct {
 	CRS    struct {
 		WKT string `json:"wkt"`
 	} `json:"coordinateSystem"`
-	Corners  map[string][]float64         `json:"cornerCoordinates"`
-	Extent   json.RawMessage              `json:"wgs84Extent"`
-	Bands    []json.RawMessage            `json:"bands"`
-	Metadata map[string]map[string]string `json:"metadata"`
+	Corners   map[string][]float64       `json:"cornerCoordinates"`
+	Extent    json.RawMessage            `json:"wgs84Extent"`
+	Bands     []json.RawMessage          `json:"bands"`
+	Metadata  map[string]json.RawMessage `json:"metadata"`
+	Transform []float64                  `json:"geoTransform"`
+	GCPs      json.RawMessage            `json:"gcps"`
 }
 
-// cappedBuffer prevents corrupt or unusually large metadata exhausting memory.
+// cappedBuffer drains excess output without retaining it or blocking the child.
+// The caller rejects either stream overflowing, even if GDAL exits successfully.
 type cappedBuffer struct {
-	bytes.Buffer
-	max int
+	buf      bytes.Buffer
+	max      int
+	exceeded bool
 }
+
+func (b *cappedBuffer) Len() int       { return b.buf.Len() }
+func (b *cappedBuffer) Bytes() []byte  { return b.buf.Bytes() }
+func (b *cappedBuffer) String() string { return b.buf.String() }
 
 func (b *cappedBuffer) Write(p []byte) (int, error) {
+	n := len(p)
 	if len(p) > b.max-b.Len() {
-		return 0, errors.New("GDAL output exceeds size limit")
+		b.exceeded = true
+		p = p[:b.max-b.Len()]
 	}
-	return b.Buffer.Write(p)
+	_, _ = b.buf.Write(p)
+	return n, nil
 }
 
-func Inspect(ctx context.Context, path string) (Inspection, error) {
-	var result Inspection
+// All subprocesses and the checksum share the inspection's two-minute budget.
+func runGDAL(ctx context.Context, name string, input io.Reader, limit int, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Env = append(os.Environ(), "GDAL_PAM_ENABLED=NO", "NITF_OPEN_UNDERLYING_DS=YES")
+	cmd.WaitDelay = time.Second
+	stdout := &cappedBuffer{max: limit}
+	stderr := &cappedBuffer{max: 16 << 10}
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = input, stdout, stderr
+	err := cmd.Run()
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if stdout.exceeded || stderr.exceeded {
+		return nil, fmt.Errorf("%s output exceeds size limit", name)
+	}
+	if errors.Is(err, exec.ErrNotFound) {
+		return nil, fmt.Errorf("%s is required; install GDAL (gdal-bin) or use the Aarde Docker image", name)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%s failed (check file integrity and GDAL driver/codec availability, including JPEG/JP2OpenJPEG for compressed NITF): %w: %s", name, err, strings.TrimSpace(stderr.String()))
+	}
+	return stdout.Bytes(), nil
+}
+
+func Inspect(ctx context.Context, path string) (result Inspection, err error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return result, err
 	}
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("inspect %q: %w", abs, err)
+		}
+	}()
 	before, err := os.Lstat(abs)
 	if err != nil {
 		return result, err
@@ -77,22 +116,16 @@ func Inspect(ctx context.Context, path string) (Inspection, error) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "gdalinfo", "-json", abs)
-	cmd.Env = append(os.Environ(), "GDAL_PAM_ENABLED=NO")
-	stdout := &cappedBuffer{max: 16 << 20}
-	stderr := &cappedBuffer{max: 16 << 10}
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
-	if err := cmd.Run(); err != nil {
-		if ctx.Err() != nil {
-			return result, ctx.Err()
-		}
-		if errors.Is(err, exec.ErrNotFound) {
-			return result, errors.New("gdalinfo is required; install GDAL or use the Aarde Docker image")
-		}
-		return result, fmt.Errorf("gdalinfo failed: %w: %s", err, strings.TrimSpace(stderr.String()))
+	// Select domains explicitly: never request all domains, TEXT, CGM, DES,
+	// or the base64 raw headers in NITF_METADATA.
+	data, err := runGDAL(ctx, "gdalinfo", nil, 16<<20, "-json", "-noct", "-norat",
+		"-mdd", "SUBDATASETS", "-mdd", "IMAGE_STRUCTURE", "-mdd", "RPC", "-mdd", "TRE", "-mdd", "xml:TRE", abs)
+	if err != nil {
+		return result, err
 	}
-	result, err = ParseInfo(stdout.Bytes())
+	result, err = parseInfo(data, func(raw info) (geo.Geometry, error) {
+		return gcpFootprint(ctx, abs, raw)
+	})
 	if err != nil {
 		return result, err
 	}
@@ -101,6 +134,13 @@ func Inspect(ctx context.Context, path string) (Inspection, error) {
 		return result, err
 	}
 	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil {
+		return result, err
+	}
+	if !sameSource(before, opened) {
+		return result, errors.New("source changed during inspection; retry when it is no longer being written")
+	}
 	h := sha256.New()
 	buf := make([]byte, 1024*1024)
 	for {
@@ -118,48 +158,104 @@ func Inspect(ctx context.Context, path string) (Inspection, error) {
 			return result, err
 		}
 	}
-	after, err := os.Stat(abs)
+	after, err := os.Lstat(abs)
 	if err != nil {
 		return result, err
 	}
-	if !os.SameFile(before, after) || before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) {
+	if !sameSource(before, after) {
 		return result, errors.New("source changed during inspection; retry when it is no longer being written")
+	}
+	if err := ctx.Err(); err != nil {
+		return result, err
 	}
 	result.Checksum = hex.EncodeToString(h.Sum(nil))
 	result.AssetLocation = abs
 	return result, nil
 }
 
-func ParseInfo(data []byte) (Inspection, error) {
+func sameSource(a, b os.FileInfo) bool {
+	return b.Mode().IsRegular() && os.SameFile(a, b) && a.Size() == b.Size() && a.ModTime().Equal(b.ModTime())
+}
+
+// ParseInfo parses already collected GDAL JSON. GCP fallback requires Inspect,
+// which can invoke GDAL's transformer on the physical file.
+func ParseInfo(data []byte) (Inspection, error) { return parseInfo(data, nil) }
+
+func parseInfo(data []byte, transform func(info) (geo.Geometry, error)) (Inspection, error) {
 	var raw info
 	var result Inspection
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return result, fmt.Errorf("invalid gdalinfo JSON: %w", err)
 	}
-	if raw.Driver != "GTiff" {
-		return result, errors.New("only GeoTIFF rasters are supported")
+	if raw.Driver != "GTiff" && raw.Driver != "NITF" {
+		return result, fmt.Errorf("unsupported GDAL driver %q; only GTiff and single-image NITF rasters are supported", raw.Driver)
+	}
+	if raw.Driver == "NITF" {
+		if err := validateSingleNITF(raw); err != nil {
+			return result, err
+		}
 	}
 	if len(raw.Size) != 2 || raw.Size[0] <= 0 || raw.Size[1] <= 0 || len(raw.Bands) == 0 {
 		return result, errors.New("raster has invalid dimensions or no bands")
 	}
-	if raw.CRS.WKT == "" {
-		return result, errors.New("raster has no source CRS")
+	gcps, gcpErr := parseGCPs(raw.GCPs)
+	affine := validAffine(raw)
+	crs, georef, method := raw.CRS.WKT, "affine", "gdal_wgs84_extent"
+	footprint, extentErr := catalogFootprint(raw.Extent)
+	if extentErr == nil && !affine && gcpErr != nil {
+		extentErr = errors.New("WGS84 extent is not backed by usable source georeferencing")
 	}
-	if len(raw.Corners) < 4 {
-		return result, errors.New("raster has no georeferenced corners")
+	if !affine && gcpErr == nil {
+		crs, georef = gcps.CRS.WKT, "gcp"
 	}
-	footprint, err := geo.Parse(raw.Extent)
-	if err != nil {
-		return result, fmt.Errorf("GDAL did not produce a supported EPSG:4326 footprint: %w", err)
+	if extentErr != nil || (!affine && gcpErr != nil) {
+		if gcpErr != nil {
+			extra := ""
+			if _, ok := raw.Metadata["RPC"]; ok {
+				extra = "; RPC metadata is present but RPC-only footprint estimation is not supported"
+			}
+			return result, fmt.Errorf("no usable affine WGS84 extent or GCP georeferencing: extent: %v; GCPs: %v%s; provide imagery with a valid CRS and affine extent or GCPs", extentErr, gcpErr, extra)
+		}
+		if transform == nil {
+			return result, errors.New("GCP footprint requires GDAL coordinate transformation; use Inspect with the physical source path")
+		}
+		var err error
+		footprint, err = transform(raw)
+		if err != nil {
+			return result, fmt.Errorf("GCP footprint: %w", err)
+		}
+		crs, georef, method = gcps.CRS.WKT, "gcp", "gdal_gcp_tps_perimeter_64"
 	}
-	metadata, err := json.Marshal(raw.Metadata)
+	bounds := raw.Corners
+	if georef == "gcp" {
+		// GDAL cornerCoordinates are pixel/line values when no affine transform
+		// exists. Do not present those as source georeferenced bounds.
+		bounds = map[string][]float64{}
+	}
+	metadata := make(map[string]json.RawMessage)
+	for _, domain := range []string{"", "IMAGE_STRUCTURE", "RPC", "TRE", "xml:TRE"} {
+		if value, ok := raw.Metadata[domain]; ok {
+			metadata[domain] = value
+		}
+	}
+	annotations := map[string]any{"format": raw.Driver, "georeferencing": georef, "footprint_method": method}
+	if affine {
+		annotations["geo_transform"] = raw.Transform
+	}
+	if len(raw.GCPs) > 0 {
+		annotations["gcps"] = raw.GCPs
+	}
+	metadata["_aarde"], _ = json.Marshal(annotations)
+	encoded, err := json.Marshal(metadata)
 	if err != nil {
 		return result, err
 	}
-	if raw.Metadata == nil {
-		metadata = []byte("{}")
+	scalars := scalarMetadata(metadata)
+	acquired := acquisitionTime(scalars)
+	if acquired == nil && raw.Driver == "NITF" {
+		acquired = nitfAcquisitionTime(scalars[""])
 	}
-	result = Inspection{Format: raw.Driver, SourceCRS: raw.CRS.WKT, Bounds: raw.Corners, Width: raw.Size[0], Height: raw.Size[1], BandCount: len(raw.Bands), AcquiredAt: acquisitionTime(raw.Metadata), CloudCover: cloudCover(raw.Metadata), Footprint: footprint, Metadata: metadata}
+	result = Inspection{Format: raw.Driver, SourceCRS: crs, Bounds: bounds, Width: raw.Size[0], Height: raw.Size[1], BandCount: len(raw.Bands), AcquiredAt: acquired, CloudCover: cloudCover(scalars), Footprint: footprint, Metadata: encoded}
 	return result, nil
 }
 

@@ -6,7 +6,7 @@ import (
 )
 
 func TestParseInfo(t *testing.T) {
-	base := map[string]any{"driverShortName": "GTiff", "size": []int{20, 10}, "coordinateSystem": map[string]any{"wkt": "PROJCRS[UTM zone 13N]"}, "cornerCoordinates": map[string]any{"upperLeft": []int{400000, 4400000}, "upperRight": []int{401000, 4400000}, "lowerRight": []int{401000, 4399000}, "lowerLeft": []int{400000, 4399000}}, "wgs84Extent": map[string]any{"type": "Polygon", "coordinates": [][][]float64{{{-106, 40}, {-105, 40}, {-105, 39}, {-106, 39}, {-106, 40}}}}, "bands": []any{map[string]int{"band": 1}}, "metadata": map[string]any{"": map[string]string{"TIFFTAG_DATETIME": "2026:09:10 12:00:00"}}}
+	base := map[string]any{"driverShortName": "GTiff", "geoTransform": []float64{400000, 50, 0, 4400000, 0, -100}, "size": []int{20, 10}, "coordinateSystem": map[string]any{"wkt": "PROJCRS[UTM zone 13N]"}, "cornerCoordinates": map[string]any{"upperLeft": []int{400000, 4400000}, "upperRight": []int{401000, 4400000}, "lowerRight": []int{401000, 4399000}, "lowerLeft": []int{400000, 4399000}}, "wgs84Extent": map[string]any{"type": "Polygon", "coordinates": [][][]float64{{{-106, 40}, {-105, 40}, {-105, 39}, {-106, 39}, {-106, 40}}}}, "bands": []any{map[string]int{"band": 1}}, "metadata": map[string]any{"": map[string]string{"TIFFTAG_DATETIME": "2026:09:10 12:00:00"}}}
 	data, _ := json.Marshal(base)
 	i, err := ParseInfo(data)
 	if err != nil {

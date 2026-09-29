@@ -33,6 +33,23 @@ type Imagery struct {
 	Metadata                           json.RawMessage
 }
 
+// Format reads the detected driver saved by inspection. Older records have no
+// annotation: report unknown without guessing from extensions or opening assets.
+func (i Imagery) Format() *string {
+	var metadata struct {
+		Aarde struct {
+			Format string `json:"format"`
+		} `json:"_aarde"`
+	}
+	if json.Unmarshal(i.Metadata, &metadata) != nil {
+		return nil
+	}
+	if metadata.Aarde.Format != "GTiff" && metadata.Aarde.Format != "NITF" {
+		return nil
+	}
+	return &metadata.Aarde.Format
+}
+
 type Query struct {
 	CatalogID     string
 	ImageIDs      []string

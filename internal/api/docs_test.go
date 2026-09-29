@@ -282,3 +282,28 @@ func TestOpenAPICloudCoverLT(t *testing.T) {
 		}
 	}
 }
+
+func TestNITFResponseContract(t *testing.T) {
+	_, c := contractCompiler(t)
+	original, _ := (contractStore{}).Get(context.Background(), "default", "scene")
+	for _, format := range []string{"GTiff", "NITF", ""} {
+		item := original
+		item.Metadata = json.RawMessage(`{"xml:TRE":"<tres><test/></tres>","_aarde":{"format":"` + format + `"}}`)
+		response := Response(item)
+		if format == "" {
+			if response.Format != nil {
+				t.Fatal("unknown format guessed")
+			}
+		} else if response.Format == nil || *response.Format != format {
+			t.Fatal("format not serialized")
+		}
+		data, err := json.Marshal(response)
+		if err != nil {
+			t.Fatal(err)
+		}
+		validateContract(t, c, "#/components/schemas/Imagery", data)
+		if strings.Contains(string(data), "<tres>") {
+			t.Fatal("XML not escaped in JSON")
+		}
+	}
+}

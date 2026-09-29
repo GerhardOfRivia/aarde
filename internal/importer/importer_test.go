@@ -18,17 +18,17 @@ func TestDiscovery(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(dir, "child"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	for _, p := range []string{"one.tif", "two.TIFF", "readme.txt", "child/three.tif"} {
+	for _, p := range []string{"one.tif", "two.TIFF", "four.NtF", "child/five.nItF", "readme.txt", "child/three.tif"} {
 		if err := os.WriteFile(filepath.Join(dir, p), []byte(p), 0644); err != nil {
 			t.Fatal(err)
 		}
 	}
 	files, skipped, err := Discover(context.Background(), dir, false)
-	if err != nil || len(files) != 2 || skipped != 1 {
+	if err != nil || len(files) != 3 || skipped != 1 {
 		t.Fatalf("non-recursive: %v %d %v", files, skipped, err)
 	}
 	files, skipped, err = Discover(context.Background(), dir, true)
-	if err != nil || len(files) != 3 || skipped != 1 {
+	if err != nil || len(files) != 5 || skipped != 1 {
 		t.Fatalf("recursive: %v %d %v", files, skipped, err)
 	}
 	files, _, err = Discover(context.Background(), filepath.Join(dir, "one.tif"), false)
@@ -56,5 +56,25 @@ func TestDryRunContinuesAndDeduplicates(t *testing.T) {
 	s, err := r.Run(context.Background(), dir, Options{DryRun: true})
 	if err == nil || s.Imported != 0 || s.WouldImport != 1 || s.Existing != 1 || s.Failed != 1 || s.Skipped != 1 {
 		t.Fatalf("summary=%+v err=%v", s, err)
+	}
+}
+
+func TestNITFDiscoverySymlinksAndCancellation(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "scene.NtF")
+	if err := os.WriteFile(source, nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(source, filepath.Join(dir, "link.nitf")); err != nil {
+		t.Fatal(err)
+	}
+	files, skipped, err := Discover(context.Background(), dir, true)
+	if err != nil || len(files) != 1 || skipped != 1 || ImageID(source) != "scene" {
+		t.Fatalf("discovery: %v %d %v", files, skipped, err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, _, err := Discover(ctx, dir, true); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
 	}
 }

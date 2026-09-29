@@ -486,6 +486,10 @@ function CatalogApp({ session }: { session: Session }) {
                 </dd>
               </div>
               <div>
+                <dt>Format</dt>
+                <dd>{selected.format ?? "Unknown"}</dd>
+              </div>
+              <div>
                 <dt>Bands</dt>
                 <dd>{selected.band_count}</dd>
               </div>

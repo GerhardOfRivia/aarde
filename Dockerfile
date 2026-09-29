@@ -14,7 +14,8 @@ COPY . .
 COPY --from=frontend /src/web/dist ./web/dist
 
 FROM build AS test
-RUN apt-get update && apt-get install -y --no-install-recommends gdal-bin && rm -rf /var/lib/apt/lists/*
+ENV AARDE_REQUIRE_GDAL=true
+RUN apt-get update && apt-get install -y --no-install-recommends gdal-bin && gdalinfo --format NITF && gdalinfo --format JPEG && gdalinfo --format JP2OpenJPEG && rm -rf /var/lib/apt/lists/*
 CMD ["go", "test", "-race", "-count=1", "-v", "./..."]
 
 FROM build AS binary
@@ -23,6 +24,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}"
 
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends gdal-bin ca-certificates \
+    && gdalinfo --format NITF && gdalinfo --format JPEG && gdalinfo --format JP2OpenJPEG \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 aarde && useradd --uid 10001 --gid aarde --create-home aarde
 COPY --from=binary /out/aarde /usr/local/bin/aarde

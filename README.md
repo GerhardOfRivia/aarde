@@ -4,7 +4,7 @@ Aarde is an open-source geospatial imagery catalog.
 Import local imagery from the CLI, catalog it in PostGIS,
 and discover your collection spatially through a web map.
 
-One Go application provides the CLI, HTTP API, and embedded React/OpenLayers UI. GeoTIFFs stay where they are; the catalog stores metadata, SHA-256 checksums, local asset paths, and WGS84 footprints. Licensed under [MIT](LICENSE).
+One Go application provides the CLI, HTTP API, and embedded React/OpenLayers UI. GeoTIFFs and single-image NITFs stay where they are; the catalog stores metadata, SHA-256 checksums, local asset paths, and WGS84 footprints. Licensed under [MIT](LICENSE).
 
 ![screenshot](screenshot.png)
 
@@ -15,7 +15,7 @@ Prerequisites: Git and Docker with Docker Compose v2. The first build downloads 
 ```sh
 git clone https://github.com/GerhardOfRivia/aarde.git
 cd aarde
-# Put georeferenced .tif / .tiff files into ./data.
+# Put georeferenced .tif / .tiff / .ntf / .nitf files into ./data.
 docker compose up -d --build
 
 docker compose exec aarde aarde import /data --recursive
@@ -46,7 +46,7 @@ The header includes the running server's build version, matching `aarde version`
 
 ```mermaid
 flowchart TD
-    Files[Local GeoTIFFs] --> CLI[aarde import / inspect]
+    Files[Local GeoTIFFs and single-image NITFs] --> CLI[aarde import / inspect]
     CLI --> GDAL[GDAL JSON inspection + WGS84 footprint]
     GDAL --> Catalog[Shared Go catalog service]
     SearchCLI[aarde search] --> Catalog
@@ -129,6 +129,9 @@ aarde version
 aarde inspect image.tif
 
 aarde import image.tif
+aarde inspect /data/scene.ntf
+aarde import /data/scene.ntf
+aarde import /data/scene.nitf --catalog example
 aarde import image.tif --cloud-cover 12.5
 aarde import ./imagery
 aarde import ./imagery --recursive
@@ -147,7 +150,7 @@ Flags may precede or follow the import path. `inspect` prints JSON with format, 
 
 Imports catalog existing files without copying or changing them. Absolute paths identify assets; within Docker those are container paths, so preserve the mount layout when moving a deployment. Raster bytes are never put into PostgreSQL. `asset_location` is independent of imagery identity so managed storage can be added later. No `--copy` option is implemented.
 
-Only `.tif` and `.tiff` are discovered, case-insensitively. Directories are scanned one level by default; `--recursive` includes descendants. Symlinks are skipped. Unsupported files appear at debug log level and contribute to `Skipped`. A corrupt GeoTIFF is reported, processing continues, and the command exits nonzero after its summary. A directory traversal failure or cancellation aborts discovery/processing with an error.
+The extensions `.tif`, `.tiff`, `.ntf`, and `.nitf` are discovered case-insensitively. GDAL must detect `GTiff` or `NITF`; renaming an arbitrary format does not make it supported. Directories are scanned one level by default; `--recursive` includes descendants. Symlinks are skipped. Unsupported files appear at debug log level and contribute to `Skipped`. A corrupt or unsupported raster (including a multi-image NITF) counts as `Failed`, its physical path and reason are reported, processing continues, and the command exits nonzero after its summary. A directory traversal failure or cancellation aborts discovery/processing with an error.
 
 ```text
 Imported: 24
@@ -156,15 +159,56 @@ Failed: 1
 Skipped: 5
 ```
 
-The initial image ID is the filename without its extension, derived in `importer.ImageID`. Catalog defaults to `default`. Names must fit 255 bytes and cannot include slashes, control characters, or surrounding whitespace.
+The initial image ID is the filename without its extension, derived in `importer.ImageID`, for both GeoTIFF and NITF. There are no segment suffixes or segment selectors. Catalog defaults to `default`. Names must fit 255 bytes and cannot include slashes, control characters, or surrounding whitespace.
 
-Within a catalog, the same checksum reports **already imported** and keeps the original record and asset path. An existing image ID with different bytes is a conflict, never an overwrite. The same bytes may be cataloged independently in another catalog. SHA-256 covers raster bytes, not external sidecar metadata. Concurrent duplicate imports are also protected by database constraints.
+For either supported format, including a renamed copy, the same physical-file checksum within a catalog reports **already imported** and keeps the original record and asset path. An existing image ID with different bytes is a conflict, never an overwrite. The same bytes may be cataloged independently in another catalog. SHA-256 reads and covers the entire physical source file, not external sidecar metadata. Concurrent duplicate imports are also protected by database constraints.
 
-Dry run discovers, inspects, checksums, validates, derives IDs, and reports **would import**, with a separate `Would import` count. With `AARDE_DATABASE_URL`, it checks stored duplicates and PostGIS topology using read-only queries. The schema must already exist. With no URL, it works offline and clearly reports that database duplicates and topology were not checked; in-batch duplicates are still detected. It never migrates or writes to the database.
+Dry run discovers, inspects, checksums, validates, derives IDs, and reports **would import**, with a separate `Would import` count. With `AARDE_DATABASE_URL`, it checks stored duplicates and PostGIS topology using read-only queries. The schema must already exist. With no URL, it works offline and clearly reports that database duplicates and topology were not checked; in-batch duplicates are still detected. It never migrates, writes to the database or source, or creates derivatives. Single-image NITF validation also applies to both dry-run modes.
 
 Cloud cover is an optional percentage from 0 to 100; `0` means clear and `NULL` means unknown. The inspector reads numeric values from `CLOUD_COVER`, `CLOUD_COVER_PERCENTAGE`, and `EO:CLOUD_COVER` (case-insensitive, in that priority order) in GDAL metadata domains. Missing, non-finite, or out-of-range metadata values stay unknown. `aarde import <path> --cloud-cover 12.5` overrides metadata for every file in that import, including during dry runs. Duplicate imports keep the original record and cloud cover. Existing rows remain unknown after migration; cloud cover is not calculated from pixels.
 
-Acquisition time is separate from import/creation time. The inspector recognizes timezone-qualified RFC3339 values under `ACQUISITION_DATETIME`, `ACQUISITION_TIME`, `SENSING_TIME`, and `TIFFTAG_DATETIME_ORIGINAL` (case-insensitive) in GDAL metadata domains. Missing or ambiguous times remain `NULL`. Generic `TIFFTAG_DATETIME`, filesystem modification time, and import time are not used as acquisition time.
+Acquisition time is separate from import/creation time. Timezone-qualified RFC3339 values under `ACQUISITION_DATETIME`, `ACQUISITION_TIME`, `SENSING_TIME`, and `TIFFTAG_DATETIME_ORIGINAL` take precedence, in that order (case-insensitive keys; domains and matching keys sorted lexically). If none is valid, NITF 2.1 (`NITF_FHDR=NITF02.10`) uses a strictly valid, 14-digit `NITF_IDATIM` in `CCYYMMDDhhmmss` UTC format. Unknown, invalid, placeholder, and unsupported legacy encodings stay `NULL`; no host-local timezone is assumed. `NITF_FDT`, generic `TIFFTAG_DATETIME`, filesystem modification time, and import time are never acquisition-time fallbacks.
+
+## Single-image NITF support
+
+Only NITFs containing **exactly one image segment** are supported. Multiple bands within that image segment are allowed. Multi-image NITFs are rejected entirely, rather than partially imported; zero-image files and containers whose image count cannot be established are also rejected. Text, graphics, and data-extension segments do not count as image segments. Original files are preserved, including on read-only imagery mounts. One physical file produces one inspection and one imagery record.
+
+GDAL's [NITF container contract](https://gdal.org/en/stable/drivers/raster/nitf_advanced.html#multi-image-nitf-files) is checked using an explicit `SUBDATASETS` request on the physical filename, plus default file/image-header metadata. GDAL 3.6.2 enumerates every image when there are multiple images, omits the list for a single image, and exposes only file headers for zero images. Aarde validates complete indexed subdataset entries and image-header presence; it never derives segment count from band count or opens a `NITF_IM` selector. Locally generated zero-, one-, and three-image fixtures test this behavior. Inconsistent or unrecognized count metadata fails validation.
+
+Footprints use this selection order:
+
+1. A valid GDAL WGS84 extent backed by an affine transform and source CRS, or by usable GCPs and their CRS.
+2. GDAL's [`gdaltransform -tps -t_srs EPSG:4326`](https://gdal.org/en/stable/programs/gdaltransform.html) on the physical source. The explicit thin-plate-spline method honors non-affine GCPs. Aarde samples 16 positions on each outer pixel edge (64 total), closes the ring, and limits the input to 256 GCPs.
+
+The result is a catalog approximation, not evidence of orthorectification. Inspection validates longitude/latitude order and ranges, finite coordinates, closure, nonzero area, and a longitude span no greater than 180 degrees per ring. Antimeridian-crossing rings are explicitly rejected; existing split MultiPolygons can be accepted. PostGIS additionally enforces valid topology at import and in database-assisted dry runs. Offline dry runs do not check PostGIS topology. Files without usable affine/GCP georeferencing fail with an actionable error, including RPC-only files. GCP-only inspection reports the GCP CRS as `source_crs` and empty `bounds`, since GDAL's ordinary corners in that case are pixel coordinates.
+
+Aarde deliberately requests the default/header, `IMAGE_STRUCTURE`, `RPC`, `TRE`, and `xml:TRE` metadata domains and preserves their JSON values, including objects, arrays, and XML strings. It does not request all domains, raw-header `NITF_METADATA`, text, graphics, or DES payload domains. Identifiers, source descriptions, compression, geolocation, and handling markings available in those selected domains are retained. Markings are metadata, **not implemented access controls**. The UI displays metadata as escaped text.
+
+The reserved `metadata._aarde` namespace records the detected `format`, affine/GCP `georeferencing`, `footprint_method`, and available affine transform/GCP metadata separately from original GDAL domains. The API's additive nullable `format` field and detail view use that stored annotation. Older records report unknown format without reopening their sources; duplicates retain their original metadata. No database migration or uniqueness change is needed. HTTP/search handlers use catalog metadata only.
+
+The Docker runtime and tests use Debian Bookworm GDAL 3.6.2 with the NITF, JPEG, and JP2OpenJPEG drivers; the build checks their availability. No proprietary codecs are required. Uncompressed NITF, JPEG (`IC=C3`), and JPEG2000 (`IC=C8`, using JP2OpenJPEG) have synthetic fixture coverage. Other compression variants depend on the installed GDAL build. For local installations, check `gdalinfo --version`, `gdalinfo --format NITF`, `gdalinfo --format JPEG`, and `gdalinfo --format JP2OpenJPEG`. See the official [NITF driver and codec documentation](https://gdal.org/en/stable/drivers/raster/nitf.html).
+
+Inspection invokes GDAL with separate arguments and `GDAL_PAM_ENABLED=NO`. Metadata collection, GCP transformation, and whole-file SHA-256 share a two-minute timeout and cancellation. Metadata stdout is capped at 16 MiB, transformer stdout at 64 KiB, and each stderr at 16 KiB. Excess output is rejected. Inspection checks source identity, size, and modification time before persistence. It requests no statistics, histograms, per-band checksums, or full pixel decoding. Successful metadata inspection is **not a full-raster integrity check**; unreadable codecs or corrupt metadata may fail before cataloging, and pixel corruption may remain undetected.
+
+Preview generation, format conversion, COGs, tiles, orthorectification, and RPC-only footprint estimation are outside this milestone. Ingestion never converts NITF to GeoTIFF.
+
+Generate a tiny unclassified NITF locally (GDAL tools are included in the Docker image), then inspect/import it:
+
+```sh
+export GDAL_PAM_ENABLED=NO
+gdal_create -of GTiff -outsize 16 16 -bands 3 -burn 42 \
+  -a_srs EPSG:4326 -a_ullr -106 40 -105 39 /tmp/tiny-source.tif
+gdal_translate -of NITF -co ICORDS=G -co IC=NC \
+  -co FSCLAS=U -co ISCLAS=U -co IDATIM=20260910120000 \
+  /tmp/tiny-source.tif /tmp/tiny.ntf
+gdalinfo -json -mdd SUBDATASETS -mdd TRE -mdd xml:TRE /tmp/tiny.ntf
+aarde inspect /tmp/tiny.ntf
+aarde import /tmp/tiny.ntf --dry-run
+# Set AARDE_DATABASE_URL for the actual import:
+aarde import /tmp/tiny.ntf --catalog example
+```
+
+This conversion creates a test fixture only; the ingestion path preserves the resulting NITF unchanged. To run these commands inside Compose, prefix each with `docker compose exec -e GDAL_PAM_ENABLED=NO aarde` (omit the host `export`).
 
 ## HTTP API
 
@@ -233,13 +277,13 @@ The SQL source is in [`migrations/`](migrations/). Startup and normal imports ap
 | `asset_location` | Absolute local path |
 | `width`, `height`, `band_count` | Positive raster dimensions/bands |
 | `source_crs` | Source CRS WKT |
-| `metadata` | GDAL metadata domains as JSONB |
+| `metadata` | Selected GDAL metadata domains and reserved `_aarde` annotations as JSONB |
 
 Unique constraints cover `(catalog_id,image_id)` and `(catalog_id,checksum)`. Indexes cover footprint (GiST), checksum, acquisition time, and pagination order. `aarde_migrations` tracks applied SQL files. Back up both the database and your imagery separately.
 
 ## Local development
 
-Install Go 1.25+, Node 22.12+ with npm, GDAL (`gdalinfo` and `gdal_create`; Debian/Ubuntu package `gdal-bin`), and PostgreSQL with PostGIS. Docker-only builds require none of these on the host.
+Install Go 1.25+, Node 22.12+ with npm, GDAL 3.6+ (`gdalinfo`, `gdaltransform`, and fixture tools `gdal_create`/`gdal_translate`; Debian/Ubuntu package `gdal-bin`), and PostgreSQL with PostGIS. Docker-only builds require none of these on the host.
 
 ```sh
 # Optional dedicated local PostGIS for development:
@@ -266,7 +310,7 @@ docker build --build-arg VERSION=v0.1.0 -t aarde:v0.1.0 .
 ## Testing
 
 ```sh
-go test -race ./...     # unit tests; integration tests explicitly skip without a test URL
+go test -race ./...     # GDAL tests skip without tools; PostGIS tests skip without a test URL
 cd web && npm ci && npm test && npm run build && cd ..  # GeoJSON/search request tests, strict TypeScript, production build
 
 make integration
@@ -274,6 +318,6 @@ make integration
 
 Alternatively, set `AARDE_TEST_DATABASE_URL` to a dedicated PostGIS database and install GDAL locally before `go test -race -count=1 ./...`. Tests migrate that database, use unique catalog names, and remove their own records. Never point tests at a production database.
 
-Integration tests generate small real GeoTIFFs in EPSG:4326 and EPSG:32613. They cover single/recursive imports, unsupported and corrupt files, missing acquisition time, duplicate checksums, ID conflicts, concurrent imports, source preservation, dry run, exact/unknown IDs, multiple catalogs, strict cloud-cover thresholds/unknown values, filtered pagination, actual polygon intersection (including bounding-box false positives), partial overlap, boundary contact, MultiPolygons, invalid topology, and real HTTP requests. Unit tests cover geometry/request limits, GDAL JSON parsing, discovery, offline dry run, and CLI flags. No PostGIS mocks are used for spatial correctness.
+Integration tests generate tiny unclassified GeoTIFFs in EPSG:4326 and EPSG:32613 and single-image NITFs locally, without imagery downloads. NITF tests cover real zero/single/multiple-image count metadata, multiband images, GCP footprints, RPC-only errors, JPEG/JPEG2000, mixed-directory continuation after rejection, repeated/renamed/concurrent imports, read-only database dry runs, source preservation/no sidecars, and PostGIS/HTTP spatial search. Capability tests explicitly skip if local GDAL/codecs are absent; Docker integration requires them. A tiny three-image fixture exists solely to test rejection. They cover single/recursive imports, unsupported and corrupt files, missing acquisition time, duplicate checksums, ID conflicts, concurrent imports, source preservation, dry run, exact/unknown IDs, multiple catalogs, strict cloud-cover thresholds/unknown values, filtered pagination, actual polygon intersection (including bounding-box false positives), partial overlap, boundary contact, MultiPolygons, invalid topology, and real HTTP requests. Unit tests cover geometry/request limits, GDAL JSON parsing, discovery, offline dry run, and CLI flags. No PostGIS mocks are used for spatial correctness.
 
 ![icon](icon.png)
