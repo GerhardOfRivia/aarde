@@ -27,6 +27,8 @@ Select a catalog, click **Draw Area**, click vertices on the map, and double-cli
 
 To use an existing boundary, choose **Paste GeoJSON**, paste a WGS84 Polygon or MultiPolygon, and click **Load Area**. A polygon Feature or a FeatureCollection containing only polygon Features also works; multiple features become one MultiPolygon search area. The map fits the loaded area, which can be adjusted with **Edit Area**. Click **Search This Area** to search the selected catalog. Loading replaces the current area and keeps existing results until you search. Invalid JSON, unsupported geometries, open rings, out-of-range coordinates, and oversized areas show an error without replacing the existing area. PostGIS checks polygon topology when the search runs.
 
+Choose **Save GeoJSON** to download the current search area to your device as `aarde-search-area.geojson`. The file contains the drawn or loaded Polygon/MultiPolygon in WGS84 longitude/latitude coordinates, including holes and any edits, and can be reused with **Paste GeoJSON**. Saving is available once an area is loaded or drawing is finished; no search is required.
+
 **Scene cloud cover less than (%)** accepts an optional decimal percentage from 0 to 100. Empty means **Any**. Apply it with **Search ID**, **Browse all**, or **Search This Area**; a new search starts on the first page, and pagination keeps the applied filters. Unknown cloud cover is excluded while filtering. This is reported cloud cover for the whole scene, not cloud cover within your selected area.
 
 No imagery yet? Generate a tiny synthetic GeoTIFF for trying the workflow:

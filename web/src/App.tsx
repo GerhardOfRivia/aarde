@@ -129,6 +129,25 @@ function CatalogApp({ session }: { session: Session }) {
     const geometry = map.current?.area();
     if (geometry) apply({ catalog, geometry });
   }
+  function saveArea() {
+    const geometry = map.current?.area();
+    if (!geometry) return;
+    const url = URL.createObjectURL(new Blob(
+      [JSON.stringify(geometry, null, 2) + "\n"],
+      { type: "application/geo+json" },
+    ));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "aarde-search-area.geojson";
+    document.body.appendChild(link);
+    try {
+      link.click();
+    } finally {
+      link.remove();
+      // Give the browser time to start the download before releasing its data.
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    }
+  }
   function select(id: string) {
     setSelected(page.items.find((item) => item.id === id) ?? null);
   }
@@ -247,6 +266,14 @@ function CatalogApp({ session }: { session: Session }) {
                 onClick={() => map.current?.edit()}
               >
                 Edit Area
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                disabled={!hasArea || mode === "draw"}
+                onClick={saveArea}
+              >
+                Save GeoJSON
               </Button>
               <Button
                 size="small"

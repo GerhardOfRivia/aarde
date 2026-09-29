@@ -210,7 +210,6 @@ export const MapCanvas = forwardRef<MapHandle, Props>(
         },
         area() {
           const s = state.current!;
-          s.modify.setActive(false);
           const feature = s.aoi.getFeatures()[0];
           return feature
             ? (format.writeGeometryObject(
