@@ -1,0 +1,23 @@
+Made with Natural Earth. Public-domain map data.
+https://www.naturalearthdata.com/about/terms-of-use/
+
+Source: https://github.com/nvkelso/natural-earth-vector/tree/v5.1.2/geojson
+Pinned release: v5.1.2. Scale: 1:110 million.
+
+Inputs (download from the source above, saving under these local names):
+  ne_110m_admin_0_countries.geojson -> countries.geojson
+  ne_110m_admin_1_states_provinces_lines.geojson -> states.geojson
+  ne_110m_populated_places_simple.geojson -> places.geojson
+
+To regenerate from the web directory:
+  node scripts/prepare-basemap.mjs /path/to/downloaded/inputs
+
+Aarde retains geometry and selected label properties, rounds coordinates to four
+decimal places, and creates country label points from Natural Earth's label
+coordinates. The state boundary dataset at this scale covers the United States.
+Country boundaries follow Natural Earth's default de facto representation.
+This is a generalized overview map, without roads or street-level detail.
+
+The resulting GeoJSON and this notice are committed to the repository and copied
+into the frontend build, then embedded in the Go binary and container image.
+Normal builds and map use do not download Natural Earth data.

@@ -86,7 +86,7 @@ func (s *Service) Ping(ctx context.Context) error                 { return s.sto
 
 func ValidateName(name string) error {
 	if len(name) == 0 || len(name) > 255 || strings.TrimSpace(name) != name || strings.ContainsAny(name, "/\\\x00\r\n\t") {
-		return errors.New("IDs must be 1–255 characters without slashes, control characters, or surrounding whitespace")
+		return errors.New("IDs must be 1-255 characters without slashes, control characters, or surrounding whitespace")
 	}
 	for _, r := range name {
 		if r < 32 || r == 127 {
@@ -104,7 +104,7 @@ func NormalizeQuery(q *Query) error {
 		q.Limit = 50
 	}
 	if q.Limit < 1 || q.Limit > 200 || q.Offset < 0 || q.Offset > 1000000 {
-		return errors.New("limit must be 1–200 and offset 0–1000000")
+		return errors.New("limit must be 1-200 and offset 0-1000000")
 	}
 	if q.CatalogID != "" {
 		if err := ValidateName(q.CatalogID); err != nil {

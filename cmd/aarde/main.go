@@ -113,7 +113,7 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		flags.StringVar(&opts.Catalog, "catalog", "default", "catalog ID")
 		flags.BoolVar(&opts.Recursive, "recursive", false, "walk child directories")
 		flags.BoolVar(&opts.DryRun, "dry-run", false, "inspect without database writes")
-		flags.Func("cloud-cover", "cloud-cover percentage (0–100); overrides metadata for all imported files", func(raw string) error {
+		flags.Func("cloud-cover", "cloud-cover percentage (0-100); overrides metadata for all imported files", func(raw string) error {
 			value, err := strconv.ParseFloat(raw, 64)
 			if err != nil {
 				return errors.New("cloud cover must be a number between 0 and 100")
@@ -187,9 +187,9 @@ func parseSearchQuery(args []string, out io.Writer) (catalog.Query, error) {
 	q := catalog.Query{}
 	flags.StringVar(&ids, "id", "", "exact image ID, or comma-separated IDs")
 	flags.StringVar(&q.CatalogID, "catalog", "default", "catalog ID")
-	flags.IntVar(&q.Limit, "limit", 50, "page size (1–200)")
+	flags.IntVar(&q.Limit, "limit", 50, "page size (1-200)")
 	flags.IntVar(&q.Offset, "offset", 0, "pagination offset")
-	flags.Func("cloud-cover-lt", "scene cloud cover strictly less than this percentage (0–100); excludes unknown values; not selected-area cloud cover", func(raw string) error {
+	flags.Func("cloud-cover-lt", "scene cloud cover strictly less than this percentage (0-100); excludes unknown values; not selected-area cloud cover", func(raw string) error {
 		value, err := strconv.ParseFloat(raw, 64)
 		if err != nil {
 			return errors.New("cloud_cover_lt must be a finite number between 0 and 100")

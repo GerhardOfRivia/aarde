@@ -126,7 +126,7 @@ func TestWebAccess(t *testing.T) {
 }
 
 func TestInfoBasemap(t *testing.T) {
-	for _, basemap := range []string{"osm", "none"} {
+	for _, basemap := range []string{"osm", "offline", "none"} {
 		for _, public := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/public=%t", basemap, public), func(t *testing.T) {
 				h := Handler(nil, "test-version", api.Access{Token: "test-token", PublicRead: public}, basemap)

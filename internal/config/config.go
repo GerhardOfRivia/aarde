@@ -41,9 +41,9 @@ func Load() (Config, error) {
 	switch c.WebBasemap {
 	case "":
 		c.WebBasemap = "osm"
-	case "osm", "none":
+	case "osm", "offline", "none":
 	default:
-		return c, fmt.Errorf("AARDE_WEB_BASEMAP must be osm or none, got %q", c.WebBasemap)
+		return c, fmt.Errorf("AARDE_WEB_BASEMAP must be osm, offline, or none, got %q", c.WebBasemap)
 	}
 	return c, nil
 }

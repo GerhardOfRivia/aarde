@@ -47,3 +47,30 @@ func TestBuildVersion(t *testing.T) {
 		}
 	}
 }
+
+func TestOfflineBasemapAssets(t *testing.T) {
+	h := Handler(nil, "test", api.Access{PublicRead: true}, "offline")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/basemaps/natural-earth-110m.geojson", nil))
+	if w.Code != 200 {
+		t.Fatalf("missing embedded basemap: %d", w.Code)
+	}
+	var data struct {
+		Type     string            `json:"type"`
+		Features []json.RawMessage `json:"features"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &data); err != nil {
+		t.Fatal(err)
+	}
+	if data.Type != "FeatureCollection" || len(data.Features) == 0 {
+		t.Fatal("embedded basemap contains no geography")
+	}
+	if w.Header().Get("Cache-Control") != "no-cache" {
+		t.Fatal("unversioned basemap must revalidate after upgrades")
+	}
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/basemaps/NOTICE.txt", nil))
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "Natural Earth") {
+		t.Fatal("missing bundled data provenance")
+	}
+}

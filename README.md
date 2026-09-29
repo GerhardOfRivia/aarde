@@ -80,16 +80,18 @@ docker compose down             # keeps the catalog volume
 | `AARDE_LISTEN_ADDRESS` | `:8080` |
 | `AARDE_LOG_LEVEL` | `info`; also `debug`, `warn`, `error` |
 | `AARDE_WEB_PUBLIC_READ` | `false`; allow anonymous catalog browsing and search |
-| `AARDE_WEB_BASEMAP` | `osm`; set `none` to disable external basemap tiles for all browsers |
+| `AARDE_WEB_BASEMAP` | Native default `osm`; Compose default `offline`. Use `offline` for the bundled map or `none` for a plain background; both prevent external tiles for all browsers |
 | `AARDE_WEB_TOKEN_PATH` | Optional private token file; see below |
 | `POSTGRES_DB`, `POSTGRES_USER` | Compose only; both default to `aarde` |
 | `POSTGRES_PASSWORD` | Compose only; `aarde-local` for local development |
 
 Change the example database password for shared deployments. URL-encode special characters in connection URLs. The web API requires the startup bearer token by default. Use HTTPS at a reverse proxy or a trusted local connection to protect it in transit. Multi-user identity management belongs at the proxy. CORS is intentionally same-origin; development uses Vite's API proxy.
 
-The OpenStreetMap basemap requires internet access and sends tile requests to OpenStreetMap. Choose **Basemap → No basemap** below the map to remove the tile source and stop new tile requests. The choice is remembered in this browser and applied before the map loads on later visits. Requests already sent before switching may finish. Footprints, selection, drawing/editing, pasted GeoJSON, and catalog searches still work against a plain background; switching basemaps preserves the current view and search area.
+The OpenStreetMap basemap requires internet access and sends tile requests to OpenStreetMap. Choose **Basemap → Offline map** for the bundled overview map, or **No basemap** for a plain background. Either choice removes the external tile source and stops new tile requests. The choice is remembered in this browser and applied before the map loads on later visits. Requests already sent before switching may finish. Footprints, selection, drawing/editing, pasted GeoJSON, and catalog searches work in all modes; switching basemaps preserves the current view and search area.
 
-For a network without internet, set `AARDE_WEB_BASEMAP=none` in Compose's `.env` and recreate the application with `docker compose up -d aarde` (rebuild first when installing this change). For a native deployment, set the variable in the server process environment before starting `aarde serve`. This forces **No basemap** for every browser, including first visits and browsers with a saved OpenStreetMap preference; the basemap selector is disabled. No external tile requests are made in this mode. Prepare the application/database images and dependencies before moving to the offline network.
+For a network without internet, set `AARDE_WEB_BASEMAP=offline` in Compose's `.env` and rebuild/recreate the application with `docker compose up -d --build aarde`. This is also Compose's default when the variable is unset. For a native deployment, rebuild the frontend and Go binary, then set the variable in the server process environment before starting `aarde serve`. This forces **Offline map** for every browser, including first visits and browsers with a saved OpenStreetMap preference; the basemap selector is disabled. `AARDE_WEB_BASEMAP=none` similarly forces **No basemap**. Neither mode makes external tile requests. Prepare the application/database images and dependencies before moving to the offline network.
+
+The offline basemap ships inside the binary/container: roughly 300 KB of [Natural Earth](https://www.naturalearthdata.com/) 1:110 million vector data, served by Aarde itself. It shows land, country boundaries and names, U.S. state boundaries, and major cities in Light and Night themes. Empty maps start at a world view; imagery and loaded search areas still zoom to their footprints. This is a generalized overview map without roads, street-level detail, or imagery. The data is public domain; source versions and regeneration instructions are in [`web/public/basemaps/NOTICE.txt`](web/public/basemaps/NOTICE.txt). Normal builds use the checked-in data without fetching it from the internet.
 
 Migrations run automatically on `serve` and non-dry `import`, inside a transaction protected by an advisory lock. The database role needs migration privileges, including permission to enable PostGIS if it has not already been enabled. Production operators can provision the extension beforehand. `search`, `inspect`, and dry run never run migrations.
 
@@ -248,7 +250,7 @@ curl -X POST http://localhost:8080/api/v1/imagery/search \
 
 Omit `catalog_id` to search all catalogs. List/search responses are `{ "items": [...], "limit": 50, "offset": 0, "has_more": false }`. Pagination is ordered by import time descending, then UUID; concurrent imports can shift offset-based pages. Limits default to 50 and are capped at 200. At most 100 exact IDs, 10,000 geometry positions, a 1 MiB request body, and offset 1,000,000 are accepted. Unknown search body fields, extra JSON values, invalid rings, out-of-range coordinates, and unsupported geometry types are rejected. PostGIS validates polygon topology, including self-intersections.
 
-`cloud_cover_lt` is an optional finite percentage from 0 to 100 (not a 0–1 fraction), accepted by GET listing and the spatial-search JSON body. Omission, or JSON `null`, preserves all existing matches including unknown cloud cover. A threshold of `20` includes `0` and `19.9`, but excludes `20`, `100`, and unknown values. `0` is valid and matches no imagery; `100` excludes values equal to 100 and unknown values. Empty GET values, malformed numbers, NaN, infinities, and values outside 0–100 return HTTP 400. The database combines this scene-level metadata filter with catalog, image-ID, and spatial predicates using AND before ordering and pagination; `has_more` reflects only matching imagery. Search never reads raster files or estimates cloud cover within the selected area.
+`cloud_cover_lt` is an optional finite percentage from 0 to 100 (not a 0-1 fraction), accepted by GET listing and the spatial-search JSON body. Omission, or JSON `null`, preserves all existing matches including unknown cloud cover. A threshold of `20` includes `0` and `19.9`, but excludes `20`, `100`, and unknown values. `0` is valid and matches no imagery; `100` excludes values equal to 100 and unknown values. Empty GET values, malformed numbers, NaN, infinities, and values outside 0-100 return HTTP 400. The database combines this scene-level metadata filter with catalog, image-ID, and spatial predicates using AND before ordering and pagination; `has_more` reflects only matching imagery. Search never reads raster files or estimates cloud cover within the selected area.
 
 See the [GDAL JSON inspection documentation](https://gdal.org/en/stable/programs/gdalinfo.html) and [PostGIS ST_Intersects reference](https://postgis.net/docs/ST_Intersects.html).
 
@@ -272,7 +274,7 @@ The SQL source is in [`migrations/`](migrations/). Startup and normal imports ap
 | `catalog_id`, `image_id` | Catalog-scoped identity |
 | `display_name` | Original filename |
 | `acquired_at` | Nullable acquisition timestamp |
-| `cloud_cover` | Nullable cloud-cover percentage (0–100) |
+| `cloud_cover` | Nullable cloud-cover percentage (0-100) |
 | `imported_at`, `created_at` | Catalog timestamps |
 | `footprint` | Valid, nonempty `geometry(MultiPolygon,4326)` |
 | `checksum` | Lowercase SHA-256 |

@@ -12,6 +12,7 @@ import { Fill, Stroke, Style } from "ol/style";
 import { fromLonLat } from "ol/proj";
 import { defaults as controls, ScaleLine } from "ol/control";
 import { useAppTheme } from "./theme";
+import { createOfflineBasemap, offlineBasemapStyle } from "./offlineBasemap";
 import type { Area, Basemap, Imagery } from "./types";
 import "ol/ol.css";
 
@@ -54,6 +55,7 @@ export const MapCanvas = forwardRef<MapHandle, Props>(
     const state = useRef<{
       map: Map;
       basemapLayer: TileLayer<OSM>;
+      offlineLayer: ReturnType<typeof createOfflineBasemap>;
       aoi: VectorSource;
       results: VectorSource;
       selected: VectorSource;
@@ -77,16 +79,20 @@ export const MapCanvas = forwardRef<MapHandle, Props>(
       const selectedLayer = new VectorLayer({ source: selected });
       // Start without a source: offline mode must never briefly request OSM tiles.
       const basemapLayer = new TileLayer<OSM>({ className: "aarde-basemap" });
+      const offlineLayer = createOfflineBasemap();
       const map = new Map({
         target: container.current!,
         controls: controls().extend([new ScaleLine()]),
         layers: [
           basemapLayer,
+          offlineLayer,
           resultLayer,
           aoiLayer,
           selectedLayer,
         ],
-        view: new View({ center: fromLonLat([-105.9, 39.48]), zoom: 8 }),
+        view: new View(callbacks.current.basemap === "offline"
+          ? { center: fromLonLat([0, 20]), zoom: 2 }
+          : { center: fromLonLat([-105.9, 39.48]), zoom: 8 }),
       });
       const draw = new Draw({ source: aoi, type: "Polygon" }),
         modify = new Modify({ source: aoi });
@@ -123,6 +129,7 @@ export const MapCanvas = forwardRef<MapHandle, Props>(
       state.current = {
         map,
         basemapLayer,
+        offlineLayer,
         aoi,
         results,
         selected,
@@ -143,12 +150,15 @@ export const MapCanvas = forwardRef<MapHandle, Props>(
     useEffect(() => {
       // Detach the source, rather than hiding its pixels. Keep vectors and view intact.
       state.current!.basemapLayer.setSource(props.basemap === "osm" ? new OSM() : null);
+      state.current!.offlineLayer.setVisible(props.basemap === "offline");
     }, [props.basemap]);
     // Update only layer styles; theme changes preserve the view, AOI and selection.
     useEffect(() => {
       const s = state.current!;
       const colors = getComputedStyle(document.documentElement);
       const color = (name: string) => colors.getPropertyValue(name).trim();
+      s.offlineLayer.setBackground(color("--basemap-water"));
+      s.offlineLayer.setStyle(offlineBasemapStyle(color));
       s.resultLayer.setStyle(
         style(color("--footprint-stroke"), color("--footprint-fill"), 2),
       );

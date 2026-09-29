@@ -16,6 +16,10 @@
   --code-bg: #f5f7f3;
   --empty-icon: #a6b8a9;
   --map-bg: #e4e9e5;
+  --basemap-water: #dce8ec;
+  --basemap-land: #f1f2e9;
+  --basemap-border: #a1b3a8;
+  --basemap-label: #63786d;
   --map-overlay: rgba(255, 255, 255, 0.95);
   --map-control-bg: rgba(255, 255, 255, 0.66);
   --scale-bg: rgba(48, 75, 64, 0.8);
@@ -51,6 +55,10 @@
   --code-bg: #0a0e0c;
   --empty-icon: #5a675f;
   --map-bg: #0f1311;
+  --basemap-water: #111e23;
+  --basemap-land: #25342d;
+  --basemap-border: #53695b;
+  --basemap-label: #a6b8aa;
   --map-overlay: rgba(23, 28, 25, 0.96);
   --map-control-bg: rgba(8, 12, 10, 0.85);
   --scale-bg: rgba(8, 12, 10, 0.85);

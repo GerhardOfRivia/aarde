@@ -22,7 +22,7 @@ services:
       AARDE_LISTEN_ADDRESS: :8080
       AARDE_LOG_LEVEL: ${AARDE_LOG_LEVEL:-info}
       AARDE_WEB_PUBLIC_READ: ${AARDE_WEB_PUBLIC_READ:-false}
-      AARDE_WEB_BASEMAP: ${AARDE_WEB_BASEMAP:-osm}
+      AARDE_WEB_BASEMAP: ${AARDE_WEB_BASEMAP:-offline}
       AARDE_WEB_TOKEN_PATH: ${AARDE_WEB_TOKEN_PATH:-/home/aarde/.local/state/aarde/web.token}
     ports:
       - "127.0.0.1:8080:8080"

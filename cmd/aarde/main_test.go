@@ -92,7 +92,7 @@ func TestSearchCloudCoverHelp(t *testing.T) {
 	if err := run(context.Background(), []string{"search", "--help"}, &out); err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"cloud-cover-lt", "strictly less", "0–100", "unknown", "scene"} {
+	for _, expected := range []string{"cloud-cover-lt", "strictly less", "0-100", "unknown", "scene"} {
 		if !strings.Contains(out.String(), expected) {
 			t.Fatalf("help lacks %q: %s", expected, out.String())
 		}

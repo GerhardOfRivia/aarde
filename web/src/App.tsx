@@ -18,7 +18,8 @@ import type { Area, Basemap, Imagery, Page, Search } from "./types";
 const basemapKey = "aarde.web.basemap";
 function storedBasemap(): Basemap {
   try {
-    if (localStorage.getItem(basemapKey) === "none") return "none";
+    const saved = localStorage.getItem(basemapKey);
+    if (saved === "none" || saved === "offline") return saved;
   } catch {
     // Basemap switching still works when browser storage is unavailable.
   }
@@ -37,7 +38,7 @@ function CatalogApp({ session }: { session: Session }) {
   const { token, info, unauthorized } = session;
   const [basemapPreference, setBasemapPreference] = useState(storedBasemap);
   // A server configured for offline use takes precedence over saved preferences.
-  const basemap = info.basemap === "none" ? "none" : basemapPreference;
+  const basemap = info.basemap === "osm" ? basemapPreference : info.basemap;
   const map = useRef<MapHandle>(null),
     active = useRef<AbortController | null>(null);
   const [catalogs, setCatalogs] = useState<string[]>([]),
@@ -165,11 +166,10 @@ function CatalogApp({ session }: { session: Session }) {
           </span>
           <span className="brand-caption">IMAGERY CATALOG</span>
         </a>
-        <span className="header-note">Local imagery. Spatial discovery.</span>
         <div className="header-actions">
           <Button className="access-button" size="small" href="/docs/">API docs</Button>
           <ThemeControl />
-          <Chip className="access-badge" label={info.authenticated ? "Authenticated · Read only" : "Read only"} size="small" variant="outlined" />
+          <Chip className="access-badge" label={info.authenticated ? "Authenticated" : "Read only"} size="small" variant="outlined" />
           {info.authenticated
             ? <Button className="access-button" size="small" onClick={() => session.signOut()}>{info.public_read ? "Lock" : "Sign out"}</Button>
             : <Button className="access-button" size="small" onClick={session.signIn}>Sign in</Button>}
@@ -339,8 +339,8 @@ function CatalogApp({ session }: { session: Session }) {
               <select
                 aria-label="Basemap"
                 value={basemap}
-                disabled={info.basemap === "none"}
-                title={info.basemap === "none" ? "Basemap disabled by server" : undefined}
+                disabled={info.basemap !== "osm"}
+                title={info.basemap !== "osm" ? "Basemap set by server" : undefined}
                 onChange={(event) => {
                   const value = event.target.value as Basemap;
                   try { localStorage.setItem(basemapKey, value); }
@@ -349,6 +349,7 @@ function CatalogApp({ session }: { session: Session }) {
                 }}
               >
                 <option value="osm">OpenStreetMap</option>
+                <option value="offline">Offline map</option>
                 <option value="none">No basemap</option>
               </select>
             </label>
@@ -449,7 +450,7 @@ function CatalogApp({ session }: { session: Session }) {
           <div className="pagination">
             <span aria-live="polite">
               {searched && page.items.length
-                ? `${page.offset + 1}–${page.offset + page.items.length}${page.has_more ? " · more available" : ""}`
+                ? `${page.offset + 1}-${page.offset + page.items.length}${page.has_more ? " · more available" : ""}`
                 : "0 images"}
             </span>
             <div>

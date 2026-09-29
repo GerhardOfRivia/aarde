@@ -75,6 +75,7 @@ func TestWebBasemap(t *testing.T) {
 	}{
 		{"", "osm", false}, {"  ", "osm", false}, {"osm", "osm", false},
 		{"none", "none", false}, {" none ", "none", false},
+		{"offline", "offline", false}, {" offline ", "offline", false},
 		{"off", "", true}, {"invalid", "", true},
 	} {
 		t.Run(test.value, func(t *testing.T) {
