@@ -14,10 +14,22 @@ export interface Imagery {
   footprint: Area;
   checksum: string;
   asset_location: string;
+  segments?: ImageSegment[];
   width: number;
   height: number;
   band_count: number;
   source_crs: string;
+  metadata: Record<string, unknown>;
+}
+export interface ImageSegment {
+  index: number;
+  width: number;
+  height: number;
+  band_count: number;
+  source_crs: string;
+  acquired_at: string | null;
+  cloud_cover: number | null;
+  footprint: Area;
   metadata: Record<string, unknown>;
 }
 export interface Page {

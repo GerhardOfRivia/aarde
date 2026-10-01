@@ -292,7 +292,7 @@ func TestGDALArgumentsAndPAM(t *testing.T) {
 	}
 	args, _ := os.ReadFile(argsFile)
 	lines := strings.Split(strings.TrimSuffix(string(args), "\n"), "\n")
-	want := []string{"-json", "-noct", "-norat", "-mdd", "SUBDATASETS", "-mdd", "IMAGE_STRUCTURE", "-mdd", "RPC", "-mdd", "TRE", "-mdd", "xml:TRE", source}
+	want := []string{"-json", "-noct", "-norat", "-mdd", "IMAGE_STRUCTURE", "-mdd", "RPC", "-mdd", "TRE", "-mdd", "xml:TRE", "NITF_IM:0:" + source}
 	if !slices.Equal(lines, want) {
 		t.Fatalf("unexpected args: %q", lines)
 	}

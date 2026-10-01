@@ -105,12 +105,12 @@ func TestGDALNITFContainerContract(t *testing.T) {
 				t.Fatal("GDAL image-header presence contract changed")
 			}
 			_, err = Inspect(context.Background(), path)
-			if tc.images == 1 {
+			if tc.images > 0 {
 				if err != nil {
 					t.Fatal(err)
 				}
 			} else {
-				want := "found 3 image segments"
+				want := "no image segments"
 				if tc.images == 0 {
 					want = "no image segments"
 				}

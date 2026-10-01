@@ -37,48 +37,55 @@ func scalarMetadata(metadata map[string]json.RawMessage) map[string]map[string]s
 // exposes image-header fields; for zero images it exposes only file headers.
 // This contract is verified against real GDAL output in integration tests.
 // Band count is never used to establish the image-segment count.
-func validateSingleNITF(raw info) error {
+func nitfImageCount(raw info) (int, error) {
 	unknown := errors.New("cannot reliably establish NITF image-segment count from GDAL container metadata; use a supported GDAL NITF driver and a complete, valid file")
 	if domain, ok := raw.Metadata["SUBDATASETS"]; ok {
 		var sub map[string]string
 		if json.Unmarshal(domain, &sub) != nil || sub == nil {
-			return unknown
+			return 0, unknown
 		}
 		if len(sub) > 0 {
 			if len(sub)%2 != 0 {
-				return unknown
+				return 0, unknown
 			}
 			count := len(sub) / 2
+			if count > 999 {
+				return 0, unknown
+			}
+			containerPath := ""
 			for n := 1; n <= count; n++ {
 				name := sub[fmt.Sprintf("SUBDATASET_%d_NAME", n)]
 				desc := sub[fmt.Sprintf("SUBDATASET_%d_DESC", n)]
-				if !strings.HasPrefix(name, fmt.Sprintf("NITF_IM:%d:", n-1)) || desc == "" {
-					return unknown
+				prefix := fmt.Sprintf("NITF_IM:%d:", n-1)
+				if n == 1 {
+					containerPath = strings.TrimPrefix(name, prefix)
+				}
+				if containerPath == "" || name != prefix+containerPath || desc == "" {
+					return 0, unknown
 				}
 			}
 			if count > 1 {
-				return fmt.Errorf("unsupported NITF: found %d image segments; only single-image NITF files are supported", count)
+				return count, nil
 			}
-			// A singleton list is not the supported driver's container contract.
-			return unknown
+			return 0, unknown
 		}
 	}
 	header := scalarMetadata(raw.Metadata)[""]
 	switch header["NITF_FHDR"] {
 	case "NITF02.10", "NITF02.00", "NITF01.10", "NSIF01.00":
 	default:
-		return unknown
+		return 0, unknown
 	}
 	_, id := header["NITF_IID1"]
 	_, compression := header["NITF_IC"]
 	_, representation := header["NITF_IREP"]
 	if !id && !compression && !representation {
-		return errors.New("unsupported NITF: no image segments found in GDAL container metadata")
+		return 0, errors.New("unsupported NITF: no image segments found in GDAL container metadata")
 	}
 	if !id || header["NITF_IC"] == "" || header["NITF_IREP"] == "" {
-		return unknown
+		return 0, unknown
 	}
-	return nil
+	return 1, nil
 }
 
 func nitfAcquisitionTime(header map[string]string) *time.Time {

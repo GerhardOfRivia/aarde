@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -31,14 +30,15 @@ func TestNITFCLI(t *testing.T) {
 	if err := json.Unmarshal([]byte(output.String()), &inspected); err != nil || inspected.Format != "NITF" || inspected.AssetLocation != single {
 		t.Fatalf("single inspection JSON: %s", output.String())
 	}
-	if err := run(context.Background(), []string{"inspect", multi}, io.Discard); err == nil || !strings.Contains(err.Error(), multi) || !strings.Contains(err.Error(), "found 3 image segments") {
+	output.Reset()
+	if err := run(context.Background(), []string{"inspect", multi}, &output); err != nil || !strings.Contains(output.String(), `"segments"`) {
 		t.Fatalf("multi inspect: %v", err)
 	}
 	output.Reset()
-	if err := run(context.Background(), []string{"import", dir, "--recursive", "--dry-run", "--catalog", "example"}, &output); err == nil {
-		t.Fatal("mixed dry run must exit nonzero")
+	if err := run(context.Background(), []string{"import", dir, "--recursive", "--dry-run", "--catalog", "example"}, &output); err != nil {
+		t.Fatal("mixed dry run failed")
 	}
-	for _, want := range []string{"offline", multi, "found 3 image segments", "Failed: 1", "Would import: 1", "example/scene"} {
+	for _, want := range []string{"offline", multi, "Failed: 0", "Would import: 2", "example/scene"} {
 		if !strings.Contains(output.String(), want) {
 			t.Fatalf("missing %s: %s", want, output.String())
 		}
@@ -65,7 +65,7 @@ func TestNITFCLI(t *testing.T) {
 	u.RawQuery = q.Encode()
 	t.Setenv("AARDE_DATABASE_URL", u.String())
 	output.Reset()
-	if err := run(ctx, []string{"import", dir, "--recursive", "--dry-run", "--catalog", "nitf-cli-dry"}, &output); err == nil || !strings.Contains(output.String(), "Would import: 1") || !strings.Contains(output.String(), "Failed: 1") {
+	if err := run(ctx, []string{"import", dir, "--recursive", "--dry-run", "--catalog", "nitf-cli-dry"}, &output); err != nil || !strings.Contains(output.String(), "Would import: 2") || !strings.Contains(output.String(), "Failed: 0") {
 		t.Fatalf("database dry run: %v %s", err, output.String())
 	}
 }

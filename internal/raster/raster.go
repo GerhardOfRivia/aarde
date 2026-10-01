@@ -22,7 +22,20 @@ import (
 	"github.com/GerhardOfRivia/aarde/internal/geo"
 )
 
+type Segment struct {
+	Index      int             `json:"index"`
+	SourceCRS  string          `json:"source_crs"`
+	Width      int             `json:"width"`
+	Height     int             `json:"height"`
+	BandCount  int             `json:"band_count"`
+	AcquiredAt *time.Time      `json:"acquired_at"`
+	CloudCover *float64        `json:"cloud_cover"`
+	Footprint  geo.Geometry    `json:"footprint"`
+	Metadata   json.RawMessage `json:"metadata"`
+}
+
 type Inspection struct {
+	Segments      []Segment            `json:"segments"`
 	Format        string               `json:"format"`
 	SourceCRS     string               `json:"source_crs"`
 	Bounds        map[string][]float64 `json:"bounds"`
@@ -123,12 +136,11 @@ func Inspect(ctx context.Context, path string) (result Inspection, err error) {
 	if err != nil {
 		return result, err
 	}
-	result, err = parseInfo(data, func(raw info) (geo.Geometry, error) {
-		return gcpFootprint(ctx, abs, raw)
-	})
+	result, err = inspectContainer(ctx, abs, data)
 	if err != nil {
 		return result, err
 	}
+
 	file, err := os.Open(abs)
 	if err != nil {
 		return result, err
@@ -170,6 +182,7 @@ func Inspect(ctx context.Context, path string) (result Inspection, err error) {
 	}
 	result.Checksum = hex.EncodeToString(h.Sum(nil))
 	result.AssetLocation = abs
+	applySidecar(abs, &result)
 	return result, nil
 }
 
@@ -188,11 +201,15 @@ func parseInfo(data []byte, transform func(info) (geo.Geometry, error)) (Inspect
 		return result, fmt.Errorf("invalid gdalinfo JSON: %w", err)
 	}
 	if raw.Driver != "GTiff" && raw.Driver != "NITF" {
-		return result, fmt.Errorf("unsupported GDAL driver %q; only GTiff and single-image NITF rasters are supported", raw.Driver)
+		return result, fmt.Errorf("unsupported GDAL driver %q; only GTiff and NITF rasters are supported", raw.Driver)
 	}
 	if raw.Driver == "NITF" {
-		if err := validateSingleNITF(raw); err != nil {
+		count, err := nitfImageCount(raw)
+		if err != nil {
 			return result, err
+		}
+		if count > 1 {
+			return result, fmt.Errorf("found %d image segments; use Inspect with the physical source path", count)
 		}
 	}
 	if len(raw.Size) != 2 || raw.Size[0] <= 0 || raw.Size[1] <= 0 || len(raw.Bands) == 0 {

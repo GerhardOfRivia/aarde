@@ -13,6 +13,7 @@ import (
 
 	"github.com/GerhardOfRivia/aarde/internal/catalog"
 	"github.com/GerhardOfRivia/aarde/internal/geo"
+	"github.com/GerhardOfRivia/aarde/internal/raster"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -22,23 +23,24 @@ type Handler struct{ catalog *catalog.Service }
 
 // Explicit DTOs keep wire representations out of the catalog model.
 type ImageryResponse struct {
-	Format        *string         `json:"format"`
-	ID            string          `json:"id"`
-	CatalogID     string          `json:"catalog_id"`
-	ImageID       string          `json:"image_id"`
-	DisplayName   string          `json:"display_name"`
-	AcquiredAt    *time.Time      `json:"acquired_at"`
-	CloudCover    *float64        `json:"cloud_cover"`
-	ImportedAt    time.Time       `json:"imported_at"`
-	CreatedAt     time.Time       `json:"created_at"`
-	Footprint     geo.Geometry    `json:"footprint"`
-	Checksum      string          `json:"checksum"`
-	AssetLocation string          `json:"asset_location"`
-	Width         int             `json:"width"`
-	Height        int             `json:"height"`
-	BandCount     int             `json:"band_count"`
-	SourceCRS     string          `json:"source_crs"`
-	Metadata      json.RawMessage `json:"metadata"`
+	Segments      []raster.Segment `json:"segments,omitempty"`
+	Format        *string          `json:"format"`
+	ID            string           `json:"id"`
+	CatalogID     string           `json:"catalog_id"`
+	ImageID       string           `json:"image_id"`
+	DisplayName   string           `json:"display_name"`
+	AcquiredAt    *time.Time       `json:"acquired_at"`
+	CloudCover    *float64         `json:"cloud_cover"`
+	ImportedAt    time.Time        `json:"imported_at"`
+	CreatedAt     time.Time        `json:"created_at"`
+	Footprint     geo.Geometry     `json:"footprint"`
+	Checksum      string           `json:"checksum"`
+	AssetLocation string           `json:"asset_location"`
+	Width         int              `json:"width"`
+	Height        int              `json:"height"`
+	BandCount     int              `json:"band_count"`
+	SourceCRS     string           `json:"source_crs"`
+	Metadata      json.RawMessage  `json:"metadata"`
 }
 type SearchResponse struct {
 	Items   []ImageryResponse `json:"items"`
@@ -48,7 +50,7 @@ type SearchResponse struct {
 }
 
 func Response(i catalog.Imagery) ImageryResponse {
-	return ImageryResponse{Format: i.Format(), ID: i.ID.String(), CatalogID: i.CatalogID, ImageID: i.ImageID, DisplayName: i.DisplayName, AcquiredAt: i.AcquiredAt, CloudCover: i.CloudCover, ImportedAt: i.ImportedAt, CreatedAt: i.CreatedAt, Footprint: i.Footprint, Checksum: i.Checksum, AssetLocation: i.AssetLocation, Width: i.Width, Height: i.Height, BandCount: i.BandCount, SourceCRS: i.SourceCRS, Metadata: i.Metadata}
+	return ImageryResponse{Format: i.Format(), ID: i.ID.String(), CatalogID: i.CatalogID, ImageID: i.ImageID, DisplayName: i.DisplayName, AcquiredAt: i.AcquiredAt, CloudCover: i.CloudCover, ImportedAt: i.ImportedAt, CreatedAt: i.CreatedAt, Footprint: i.Footprint, Checksum: i.Checksum, AssetLocation: i.AssetLocation, Width: i.Width, Height: i.Height, BandCount: i.BandCount, SourceCRS: i.SourceCRS, Metadata: i.Metadata, Segments: i.Segments}
 }
 func PageResponse(p catalog.Page) SearchResponse {
 	out := SearchResponse{Items: []ImageryResponse{}, Limit: p.Limit, Offset: p.Offset, HasMore: p.HasMore}

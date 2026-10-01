@@ -51,7 +51,16 @@ func TestRenamePreservesMigrationHistory(t *testing.T) {
 	if _, err := repo.pool.Exec(ctx, "ALTER TABLE "+identifier+".imagery DROP COLUMN cloud_cover"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := repo.pool.Exec(ctx, "DELETE FROM aarde_migrations WHERE name='002_cloud_cover.sql'"); err != nil {
+	if _, err := repo.pool.Exec(ctx, "DELETE FROM aarde_migrations WHERE name IN ('002_cloud_cover.sql', '003_image_segments.sql')"); err != nil {
+		t.Fatal(err)
+	}
+	// Recreate the pre-segment schema and migration history to test a real upgrade.
+	if _, err := repo.pool.Exec(ctx, "ALTER TABLE "+identifier+`.imagery
+ DROP CONSTRAINT imagery_dimensions_check,
+ DROP COLUMN segments,
+ ADD CONSTRAINT imagery_width_check CHECK (width > 0),
+ ADD CONSTRAINT imagery_height_check CHECK (height > 0),
+ ADD CONSTRAINT imagery_band_count_check CHECK (band_count > 0)`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := repo.pool.Exec(ctx, "ALTER TABLE "+identifier+".aarde_migrations RENAME TO ruimte_migrations"); err != nil {
@@ -63,7 +72,7 @@ func TestRenamePreservesMigrationHistory(t *testing.T) {
 		}
 	}
 	after, err := service.Get(ctx, cat, "preserved")
-	if err != nil || before.ID != after.ID || after.CloudCover != nil {
+	if err != nil || before.ID != after.ID || after.CloudCover != nil || len(after.Segments) != 0 {
 		t.Fatalf("catalog record was not preserved: %v", err)
 	}
 	var oldGone, newExists bool

@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -100,16 +101,19 @@ END $$`); err != nil {
 }
 
 const columns = `id, catalog_id, image_id, display_name, acquired_at, imported_at,
-ST_AsGeoJSON(footprint, 15), checksum, asset_location, width, height, band_count, source_crs, metadata, created_at, cloud_cover`
+ST_AsGeoJSON(footprint, 15), checksum, asset_location, width, height, band_count, source_crs, metadata, created_at, cloud_cover, segments`
 
 func scan(row pgx.Row) (catalog.Imagery, error) {
 	var i catalog.Imagery
-	var geometry []byte
-	err := row.Scan(&i.ID, &i.CatalogID, &i.ImageID, &i.DisplayName, &i.AcquiredAt, &i.ImportedAt, &geometry, &i.Checksum, &i.AssetLocation, &i.Width, &i.Height, &i.BandCount, &i.SourceCRS, &i.Metadata, &i.CreatedAt, &i.CloudCover)
+	var geometry, segments []byte
+	err := row.Scan(&i.ID, &i.CatalogID, &i.ImageID, &i.DisplayName, &i.AcquiredAt, &i.ImportedAt, &geometry, &i.Checksum, &i.AssetLocation, &i.Width, &i.Height, &i.BandCount, &i.SourceCRS, &i.Metadata, &i.CreatedAt, &i.CloudCover, &segments)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return i, catalog.ErrNotFound
 	}
 	if err != nil {
+		return i, err
+	}
+	if err = json.Unmarshal(segments, &i.Segments); err != nil {
 		return i, err
 	}
 	i.Footprint, err = geo.Parse(geometry)
@@ -144,10 +148,17 @@ func (r *Repository) ValidateGeometry(ctx context.Context, g geo.Geometry) error
 func (r *Repository) Insert(ctx context.Context, i catalog.Imagery) (catalog.Imagery, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
+	segments, err := json.Marshal(i.Segments)
+	if err != nil {
+		return i, false, err
+	}
+	if string(segments) == "null" {
+		segments = []byte("[]")
+	}
 	row, err := scan(r.pool.QueryRow(ctx, `INSERT INTO imagery
-(id,catalog_id,image_id,display_name,acquired_at,imported_at,footprint,checksum,asset_location,width,height,band_count,source_crs,metadata,created_at,cloud_cover)
-VALUES ($1,$2,$3,$4,$5,$6,ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON($7),4326)),$8,$9,$10,$11,$12,$13,$14,$15,$16)
-ON CONFLICT DO NOTHING RETURNING `+columns, i.ID, i.CatalogID, i.ImageID, i.DisplayName, i.AcquiredAt, i.ImportedAt, string(i.Footprint.JSON()), i.Checksum, i.AssetLocation, i.Width, i.Height, i.BandCount, i.SourceCRS, i.Metadata, i.CreatedAt, i.CloudCover))
+(id,catalog_id,image_id,display_name,acquired_at,imported_at,footprint,checksum,asset_location,width,height,band_count,source_crs,metadata,created_at,cloud_cover,segments)
+VALUES ($1,$2,$3,$4,$5,$6,ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON($7),4326)),$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+ON CONFLICT DO NOTHING RETURNING `+columns, i.ID, i.CatalogID, i.ImageID, i.DisplayName, i.AcquiredAt, i.ImportedAt, string(i.Footprint.JSON()), i.Checksum, i.AssetLocation, i.Width, i.Height, i.BandCount, i.SourceCRS, i.Metadata, i.CreatedAt, i.CloudCover, segments))
 	if !errors.Is(err, catalog.ErrNotFound) {
 		return row, false, err
 	}

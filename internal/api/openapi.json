@@ -1097,7 +1097,8 @@
               "string",
               "null"
             ],
-            "format": "date-time"
+            "format": "date-time",
+            "description": "For multi-image NITF, a unanimous known segment time, otherwise null."
           },
           "imported_at": {
             "type": "string",
@@ -1121,19 +1122,22 @@
           },
           "width": {
             "type": "integer",
-            "minimum": 1
+            "minimum": 0,
+            "description": "Positive for a single raster; 0 (unavailable) for multi-image NITF. See segments."
           },
           "height": {
             "type": "integer",
-            "minimum": 1
+            "minimum": 0,
+            "description": "Positive for a single raster; 0 (unavailable) for multi-image NITF. See segments."
           },
           "band_count": {
             "type": "integer",
-            "minimum": 1
+            "minimum": 0,
+            "description": "Positive for a single raster; 0 (unavailable) for multi-image NITF. See segments."
           },
           "source_crs": {
             "type": "string",
-            "description": "Source CRS in WKT."
+            "description": "Source CRS for a single raster; empty for multi-image NITF. See segments."
           },
           "metadata": {
             "description": "Selected GDAL metadata domains preserved as JSON, including object and XML values. The reserved _aarde namespace contains format, georeferencing, and footprint-method annotations; handling markings are metadata, not access controls."
@@ -1145,7 +1149,7 @@
             ],
             "minimum": 0,
             "maximum": 100,
-            "description": "Reported scene cloud-cover percentage (0\u2013100, not a fraction); null when unknown. Describes the whole scene, not the selected area."
+            "description": "File-level override, or unanimous known segment percentage for multi-image NITF, otherwise null."
           },
           "format": {
             "type": [
@@ -1158,6 +1162,13 @@
               null
             ],
             "description": "GDAL-detected source format, stored at import. Null for records imported before format annotations; never inferred from the filename."
+          },
+          "segments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImageSegment"
+            },
+            "description": "NITF image segments in zero-based index order; absent or empty for legacy records and GeoTIFF."
           }
         },
         "required": [
@@ -1293,6 +1304,63 @@
             "message": "search geometry must be a Polygon or MultiPolygon"
           }
         }
+      },
+      "ImageSegment": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "band_count": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "source_crs": {
+            "type": "string"
+          },
+          "acquired_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "cloud_cover": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 100
+          },
+          "footprint": {
+            "$ref": "#/components/schemas/MultiPolygon"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "index",
+          "width",
+          "height",
+          "band_count",
+          "source_crs",
+          "acquired_at",
+          "cloud_cover",
+          "footprint",
+          "metadata"
+        ]
       }
     },
     "responses": {

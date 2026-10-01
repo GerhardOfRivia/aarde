@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/GerhardOfRivia/aarde/internal/geo"
+	"github.com/GerhardOfRivia/aarde/internal/raster"
 	"github.com/google/uuid"
 )
 
@@ -22,6 +23,7 @@ var (
 
 // Imagery is shared by the CLI and server, independently of API serialization.
 type Imagery struct {
+	Segments                           []raster.Segment
 	ID                                 uuid.UUID
 	CatalogID, ImageID, DisplayName    string
 	AcquiredAt                         *time.Time
@@ -184,8 +186,27 @@ func ValidateImagery(i Imagery) error {
 	if err := ValidateName(i.ImageID); err != nil {
 		return fmt.Errorf("image: %w", err)
 	}
-	if i.Width <= 0 || i.Height <= 0 || i.BandCount <= 0 || i.SourceCRS == "" || i.AssetLocation == "" {
+	if len(i.Segments) > 1 {
+		if i.Width != 0 || i.Height != 0 || i.BandCount != 0 || i.SourceCRS != "" {
+			return errors.New("multi-image aggregate dimensions, bands and CRS must be unavailable")
+		}
+
+	} else if i.Width <= 0 || i.Height <= 0 || i.BandCount <= 0 || i.SourceCRS == "" || i.AssetLocation == "" {
 		return errors.New("raster requires dimensions, bands, a CRS, and an asset location")
+	}
+	for index, segment := range i.Segments {
+		if segment.Index != index || segment.Width <= 0 || segment.Height <= 0 || segment.BandCount <= 0 || segment.SourceCRS == "" || !json.Valid(segment.Metadata) {
+			return fmt.Errorf("invalid image segment %d", index)
+		}
+		if err := segment.Footprint.Validate(); err != nil {
+			return fmt.Errorf("image segment %d: %w", index, err)
+		}
+		if err := ValidateCloudCover(segment.CloudCover); err != nil {
+			return fmt.Errorf("image segment %d: %w", index, err)
+		}
+	}
+	if i.AssetLocation == "" {
+		return errors.New("asset location is required")
 	}
 	b, err := hex.DecodeString(i.Checksum)
 	if err != nil || len(b) != 32 {

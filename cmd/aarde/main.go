@@ -113,7 +113,7 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		flags.StringVar(&opts.Catalog, "catalog", "default", "catalog ID")
 		flags.BoolVar(&opts.Recursive, "recursive", false, "walk child directories")
 		flags.BoolVar(&opts.DryRun, "dry-run", false, "inspect without database writes")
-		flags.Func("cloud-cover", "cloud-cover percentage (0-100); overrides metadata for all imported files", func(raw string) error {
+		flags.Func("cloud-cover", "file-level cloud-cover percentage (0-100); overrides aggregate metadata, preserving segment values", func(raw string) error {
 			value, err := strconv.ParseFloat(raw, 64)
 			if err != nil {
 				return errors.New("cloud cover must be a number between 0 and 100")

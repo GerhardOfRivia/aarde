@@ -204,7 +204,7 @@ function CatalogApp({ session }: { session: Session }) {
                   setMode("draw");
                 }}
               >
-                ＋ Draw Area
+                + Draw Area
               </Button>
               <GeoJSONInput onLoad={loadArea} />
               <Button
@@ -445,8 +445,7 @@ function CatalogApp({ session }: { session: Session }) {
               <div>
                 <dt>Raster dimensions</dt>
                 <dd>
-                  {selected.width.toLocaleString()} ×{" "}
-                  {selected.height.toLocaleString()} px
+                  {selected.width > 0 ? `${selected.width.toLocaleString()} × ${selected.height.toLocaleString()} px` : "See image segments"}
                 </dd>
               </div>
               <div>
@@ -455,7 +454,7 @@ function CatalogApp({ session }: { session: Session }) {
               </div>
               <div>
                 <dt>Bands</dt>
-                <dd>{selected.band_count}</dd>
+                <dd>{selected.band_count || "See image segments"}</dd>
               </div>
               <div className="wide">
                 <dt>Asset location</dt>
@@ -471,9 +470,22 @@ function CatalogApp({ session }: { session: Session }) {
               </div>
             </dl>
             <div className="metadata-disclosures">
+              {selected.segments && selected.segments.length > 0 && (
+                <details>
+                  <summary>Image segments ({selected.segments.length})</summary>
+                  {selected.segments.map((segment) => (
+                    <details key={segment.index}>
+                      <summary>
+                        Segment {segment.index}: {segment.width} × {segment.height}, {segment.band_count} bands
+                      </summary>
+                      <pre>{JSON.stringify(segment, null, 2)}</pre>
+                    </details>
+                  ))}
+                </details>
+              )}
               <details>
                 <summary>Source CRS</summary>
-                <pre>{selected.source_crs}</pre>
+                <pre>{selected.source_crs || "See image segments"}</pre>
               </details>
               <details>
                 <summary>Additional metadata</summary>

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/GerhardOfRivia/aarde/internal/raster"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -305,5 +306,27 @@ func TestNITFResponseContract(t *testing.T) {
 		if strings.Contains(string(data), "<tres>") {
 			t.Fatal("XML not escaped in JSON")
 		}
+	}
+}
+
+func TestMultiNITFResponseContract(t *testing.T) {
+	_, c := contractCompiler(t)
+	item, _ := (contractStore{}).Get(context.Background(), "default", "scene")
+	item.Metadata = json.RawMessage(`{"_aarde":{"format":"NITF"}}`)
+	for index := 0; index < 2; index++ {
+		item.Segments = append(item.Segments, raster.Segment{Index: index, Width: item.Width + index, Height: item.Height, BandCount: item.BandCount, SourceCRS: item.SourceCRS, Footprint: item.Footprint, Metadata: json.RawMessage(`{"xml:TRE":"<tres/>"}`)})
+	}
+	item.Width, item.Height, item.BandCount = 0, 0, 0
+	item.SourceCRS = ""
+	item.AcquiredAt = nil
+	item.CloudCover = nil
+	data, err := json.Marshal(Response(item))
+	if err != nil {
+		t.Fatal(err)
+	}
+	validateContract(t, c, "#/components/schemas/Imagery", data)
+	var decoded ImageryResponse
+	if err = json.Unmarshal(data, &decoded); err != nil || len(decoded.Segments) != 2 || decoded.Segments[1].Width != item.Segments[1].Width {
+		t.Fatalf("segment response: %s", data)
 	}
 }

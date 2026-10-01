@@ -38,11 +38,11 @@ func TestPostGISNITFImports(t *testing.T) {
 	before, _ := os.ReadFile(scene)
 	var events []importer.Event
 	runner := importer.Runner{Catalog: service, Report: func(e importer.Event) { events = append(events, e) }}
-	// Both dry-run modes inspect and reject the entire multi-image container.
+	// Both dry-run modes inspect the entire multi-image container.
 	for _, db := range []*catalog.Service{nil, service} {
 		r := importer.Runner{Catalog: db}
 		summary, err := r.Run(ctx, dir, importer.Options{Catalog: cat, Recursive: true, DryRun: true})
-		if err == nil || summary.Failed != 1 || summary.WouldImport != 3 || summary.Imported != 0 || summary.Skipped != 1 {
+		if err != nil || summary.Failed != 0 || summary.WouldImport != 4 || summary.Imported != 0 || summary.Skipped != 1 {
 			t.Fatalf("dry run: %+v %v", summary, err)
 		}
 		page, err := service.Search(ctx, catalog.Query{CatalogID: cat})
@@ -51,15 +51,16 @@ func TestPostGISNITFImports(t *testing.T) {
 		}
 	}
 	summary, err := runner.Run(ctx, dir, importer.Options{Catalog: cat, Recursive: true})
-	if err == nil || summary.Failed != 1 || summary.Imported != 3 || summary.Skipped != 1 {
+	if err != nil || summary.Failed != 0 || summary.Imported != 4 || summary.Skipped != 1 {
 		t.Fatalf("mixed import: %+v %v", summary, err)
 	}
-	if len(events) != 4 || events[0].Path != multi || events[0].Status != "failed" || !strings.Contains(events[0].Err.Error(), "found 3 image segments") {
-		t.Fatalf("failed-file reporting: %+v", events)
+	if len(events) != 4 || events[0].Path != multi || events[0].Status != "imported" {
+		t.Fatalf("file reporting: %+v", events)
 	}
-	if _, err := service.Get(ctx, cat, "a-multi"); !errors.Is(err, catalog.ErrNotFound) {
-		t.Fatalf("multi-image record was created: %v", err)
+	if got, err := service.Get(ctx, cat, "a-multi"); err != nil || len(got.Segments) != 3 {
+		t.Fatalf("multi-image record: %+v %v", got, err)
 	}
+
 	original, err := service.Get(ctx, cat, "b-scene")
 	if err != nil {
 		t.Fatal(err)
@@ -103,7 +104,7 @@ func TestPostGISNITFImports(t *testing.T) {
 	}
 	g := geometry(t, `{"type":"Polygon","coordinates":[[[-106,39],[-105,39],[-105,40],[-106,40],[-106,39]]]}`)
 	page, err := service.Search(ctx, catalog.Query{CatalogID: cat, Geometry: &g})
-	if err != nil || len(page.Items) != 3 {
+	if err != nil || len(page.Items) != 4 {
 		t.Fatalf("NITF/GeoTIFF PostGIS intersection: %+v %v", page, err)
 	}
 	threshold := 20.0
@@ -129,7 +130,7 @@ func TestPostGISNITFImports(t *testing.T) {
 	w = httptest.NewRecorder()
 	handler.ServeHTTP(w, httptest.NewRequest("POST", "/imagery/search", strings.NewReader(`{"catalog_id":"`+cat+`","geometry":`+string(g.JSON())+`}`)))
 	var responsePage api.SearchResponse
-	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &responsePage) != nil || len(responsePage.Items) != 3 {
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &responsePage) != nil || len(responsePage.Items) != 4 {
 		t.Fatalf("HTTP spatial search: %d %s", w.Code, w.Body.String())
 	}
 	after, _ := os.ReadFile(scene + ".offline")
@@ -166,7 +167,7 @@ func TestPostGISNITFImports(t *testing.T) {
 			t.Fatalf("readonly new: %+v %v", s, err)
 		}
 		s, err = r.Run(ctx, multi, importer.Options{Catalog: cat + "-dry", DryRun: true})
-		if err == nil || s.Failed != 1 {
+		if err != nil || s.WouldImport != 1 {
 			t.Fatalf("readonly rejection: %+v %v", s, err)
 		}
 		if err := repo.pool.QueryRow(ctx, "SELECT count(*) FROM aarde_migrations").Scan(&migrationsAfter); err != nil || migrationsAfter != migrationsBefore {
@@ -186,7 +187,7 @@ func TestPostGISNITFImports(t *testing.T) {
 		results := make(chan result, 2)
 		for range 2 {
 			go func() {
-				s, err := r.Run(ctx, scene, importer.Options{Catalog: cat + "-concurrent"})
+				s, err := r.Run(ctx, multi, importer.Options{Catalog: cat + "-concurrent"})
 				results <- result{s, err}
 			}()
 		}
