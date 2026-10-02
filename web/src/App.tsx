@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Button,
@@ -7,7 +7,6 @@ import {
 } from "@mui/material";
 import { AccessGate, ThemeControl } from "./Access";
 import type { Session } from "./Access";
-import { MapCanvas } from "./MapCanvas";
 import { GeoJSONInput } from "./GeoJSONInput";
 import type { MapHandle } from "./MapCanvas";
 import { APIError, request, search } from "./types";
@@ -16,6 +15,8 @@ import { CatalogFilters } from "./CatalogFilters";
 import { appliedFilters, buildSearch, defaultFilters, filterKey, removeFilter } from "./filters";
 import type { FilterDraft, FilterErrors } from "./filters";
 import { parseSearchArea } from "./geojson";
+
+const MapCanvas = lazy(() => import("./MapCanvas").then((module) => ({ default: module.MapCanvas })));
 
 const basemapKey = "aarde.web.basemap";
 function storedBasemap(): Basemap {
@@ -228,20 +229,27 @@ function CatalogApp({ session }: { session: Session }) {
             </div>
           </div>
           <div className="map-wrap">
-            <MapCanvas
-              ref={map}
-              basemap={basemap}
-              items={page.items}
-              selected={selected}
-              onSelect={select}
-              onArea={(geometry, editing) => {
-                setMode(editing ? (geometry ? "edit" : "draw") : "");
-                changeDraft((previous) => ({
-                  ...previous, geometry,
-                  scope: geometry ? (JSON.stringify(geometry) === JSON.stringify(previous.geometry) ? previous.scope : "area") : "anywhere",
-                }));
-              }}
-            />
+            <Suspense fallback={
+              <div className="map-loading" role="status">
+                <CircularProgress size={24} aria-hidden="true" />
+                <span>Loading map…</span>
+              </div>
+            }>
+              <MapCanvas
+                ref={map}
+                basemap={basemap}
+                items={page.items}
+                selected={selected}
+                onSelect={select}
+                onArea={(geometry, editing) => {
+                  setMode(editing ? (geometry ? "edit" : "draw") : "");
+                  changeDraft((previous) => ({
+                    ...previous, geometry,
+                    scope: geometry ? (JSON.stringify(geometry) === JSON.stringify(previous.geometry) ? previous.scope : "area") : "anywhere",
+                  }));
+                }}
+              />
+            </Suspense>
             <div className="map-hint">
               {mode === "draw"
                 ? "Click to add vertices. Double-click to finish."

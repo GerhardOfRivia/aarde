@@ -32,9 +32,13 @@ Usage:
   aarde import <file-or-directory> [--recursive] [--dry-run] [--catalog default] [--cloud-cover percent]
   aarde inspect <image.tif|image.ntf|image.nitf>
   aarde search --id <exact-ID> [--catalog default] [--cloud-cover-lt percent] [--limit 50] [--offset 0]
+  aarde remove -image <exact-ID> (default catalog, no confirmation)
+  aarde remove -catalog <catalog-ID> (requires confirmation)
   aarde version
 
-Set AARDE_DATABASE_URL for serve, import, and search.
+Set AARDE_DATABASE_URL for serve, import, search, and remove.
+Remove requires exactly one of -image or -catalog; the flags are mutually exclusive.
+Remove deletes database records only; source imagery files are preserved.
 Dry run can work offline; set the database URL to also check existing records.
 Web access requires the private token file named in the startup log.
 AARDE_WEB_PUBLIC_READ=true allows anonymous catalog browsing and search.
@@ -49,6 +53,10 @@ func main() {
 	}
 }
 func run(ctx context.Context, args []string, out io.Writer) error {
+	return runWithInput(ctx, args, os.Stdin, out)
+}
+
+func runWithInput(ctx context.Context, args []string, in io.Reader, out io.Writer) error {
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
 		fmt.Fprint(out, usage)
 		return nil
@@ -157,6 +165,20 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 			fmt.Fprintf(out, "Would import: %d\n", summary.WouldImport)
 		}
 		return err
+	case "remove":
+		opts, err := parseRemoveOptions(args[1:], out)
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		db, err := open(false)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		return remove(ctx, catalog.New(db), opts, in, out)
 	case "search":
 		q, err := parseSearchQuery(args[1:], out)
 		if errors.Is(err, flag.ErrHelp) {

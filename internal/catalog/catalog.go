@@ -17,6 +17,7 @@ import (
 
 var (
 	ErrNotFound        = errors.New("imagery not found")
+	ErrCatalogNotFound = errors.New("catalog not found")
 	ErrConflict        = errors.New("image ID already exists with a different checksum")
 	ErrInvalidGeometry = errors.New("invalid geometry")
 )
@@ -76,6 +77,8 @@ type Store interface {
 	Insert(context.Context, Imagery) (Imagery, bool, error)
 	Search(context.Context, Query) (Page, error)
 	Catalogs(context.Context) ([]string, error)
+	RemoveImage(context.Context, string, string) error
+	RemoveCatalog(context.Context, string) (int64, error)
 	ValidateGeometry(context.Context, geo.Geometry) error
 	Ping(context.Context) error
 }
@@ -88,6 +91,23 @@ func (s *Service) Get(ctx context.Context, cat, id string) (Imagery, error) {
 }
 func (s *Service) Catalogs(ctx context.Context) ([]string, error) { return s.store.Catalogs(ctx) }
 func (s *Service) Ping(ctx context.Context) error                 { return s.store.Ping(ctx) }
+
+func (s *Service) RemoveImage(ctx context.Context, cat, id string) error {
+	if err := ValidateName(cat); err != nil {
+		return fmt.Errorf("catalog: %w", err)
+	}
+	if err := ValidateName(id); err != nil {
+		return fmt.Errorf("image: %w", err)
+	}
+	return s.store.RemoveImage(ctx, cat, id)
+}
+
+func (s *Service) RemoveCatalog(ctx context.Context, cat string) (int64, error) {
+	if err := ValidateName(cat); err != nil {
+		return 0, fmt.Errorf("catalog: %w", err)
+	}
+	return s.store.RemoveCatalog(ctx, cat)
+}
 
 func ValidateName(name string) error {
 	if len(name) == 0 || len(name) > 255 || strings.TrimSpace(name) != name || strings.ContainsAny(name, "/\\\x00\r\n\t") {

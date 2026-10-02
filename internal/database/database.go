@@ -129,6 +129,34 @@ func (r *Repository) ByChecksum(ctx context.Context, cat, sum string) (catalog.I
 	defer cancel()
 	return scan(r.pool.QueryRow(ctx, "SELECT "+columns+" FROM imagery WHERE catalog_id=$1 AND checksum=$2", cat, sum))
 }
+
+// Removal only deletes catalog records; source assets are never touched.
+func (r *Repository) RemoveImage(ctx context.Context, cat, id string) error {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	tag, err := r.pool.Exec(ctx, "DELETE FROM imagery WHERE catalog_id=$1 AND image_id=$2", cat, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return catalog.ErrNotFound
+	}
+	return nil
+}
+
+func (r *Repository) RemoveCatalog(ctx context.Context, cat string) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	tag, err := r.pool.Exec(ctx, "DELETE FROM imagery WHERE catalog_id=$1", cat)
+	if err != nil {
+		return 0, err
+	}
+	if tag.RowsAffected() == 0 {
+		return 0, catalog.ErrCatalogNotFound
+	}
+	return tag.RowsAffected(), nil
+}
+
 func (r *Repository) ValidateGeometry(ctx context.Context, g geo.Geometry) error {
 	if err := g.Validate(); err != nil {
 		return fmt.Errorf("%w: %v", catalog.ErrInvalidGeometry, err)

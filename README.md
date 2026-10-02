@@ -76,7 +76,7 @@ docker compose down             # keeps the catalog volume
 
 | Variable | Default / purpose |
 | --- | --- |
-| `AARDE_DATABASE_URL` | Required for server, import, and CLI search; PostgreSQL URL |
+| `AARDE_DATABASE_URL` | Required for server, import, CLI search, and removal; PostgreSQL URL |
 | `AARDE_LISTEN_ADDRESS` | `:8080` |
 | `AARDE_LOG_LEVEL` | `info`; also `debug`, `warn`, `error` |
 | `AARDE_WEB_PUBLIC_READ` | `false`; allow anonymous catalog browsing and search |
@@ -93,7 +93,7 @@ For a network without internet, set `AARDE_WEB_BASEMAP=offline` in Compose's `.e
 
 The offline basemap ships inside the binary/container: roughly 300 KB of [Natural Earth](https://www.naturalearthdata.com/) 1:110 million vector data, served by Aarde itself. It shows land, country boundaries and names, U.S. state boundaries, and major cities in Light and Night themes. Empty maps start at a world view; imagery and loaded search areas still zoom to their footprints. This is a generalized overview map without roads, street-level detail, or imagery. The data is public domain; source versions and regeneration instructions are in [`web/public/basemaps/NOTICE.txt`](web/public/basemaps/NOTICE.txt). Normal builds use the checked-in data without fetching it from the internet.
 
-Migrations run automatically on `serve` and non-dry `import`, inside a transaction protected by an advisory lock. The database role needs migration privileges, including permission to enable PostGIS if it has not already been enabled. Production operators can provision the extension beforehand. `search`, `inspect`, and dry run never run migrations.
+Migrations run automatically on `serve` and non-dry `import`, inside a transaction protected by an advisory lock. The database role needs migration privileges, including permission to enable PostGIS if it has not already been enabled. Production operators can provision the extension beforehand. `search`, `remove`, `inspect`, and dry run never run migrations.
 
 ## Web access and read-only viewing
 
@@ -146,7 +146,18 @@ aarde search --id ABC123
 aarde search --id ABC123,IMG002 --catalog breckenridge
 aarde search --id ABC123 --limit 50 --offset 0
 aarde search --id ABC123,IMG002 --catalog breckenridge --cloud-cover-lt 20
+
+aarde remove -image xyz
+aarde remove -catalog project-123
 ```
+
+`aarde remove` requires exactly one of `-image` or `-catalog`. The flags are mutually exclusive; supplying both reports an error before opening the database or deleting any records.
+
+`aarde remove -image xyz` deletes the exact image ID from the `default` catalog without prompting. Image removal is limited to the `default` catalog. IDs are case-sensitive; matching IDs in other catalogs are preserved.
+
+`aarde remove -catalog project-123` prompts before deleting all image records in that catalog. Type `yes` to confirm; any other response or empty input cancels. Ctrl+C also aborts the prompt. There is no confirmation-bypass flag. Catalogs exist only while they contain imagery, so deleting their last image removes them from catalog listings. A missing image or catalog reports an error. Successful catalog removal reports the number of deleted image records.
+
+Removal requires `AARDE_DATABASE_URL` and an existing database schema. It deletes database records only, preserving source imagery and sidecar files. Removed imagery can be imported again. In Docker, use `docker compose exec aarde aarde remove -catalog project-123` to answer the prompt interactively.
 
 `aarde search --cloud-cover-lt 20` (with the required `--id`) returns only imagery whose reported scene cloud cover is strictly below 20%. Omit the flag for any cloud cover; unknown values are excluded when the flag is supplied. The threshold accepts finite decimal percentages from 0 through 100, including explicit zero. It describes the scene, not a selected area.
 
