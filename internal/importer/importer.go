@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/GerhardOfRivia/aarde/internal/catalog"
@@ -105,6 +106,9 @@ func (r Runner) Run(ctx context.Context, path string, opts Options) (Summary, er
 		event := Event{Path: path, ImageID: ImageID(path)}
 		inspection, err := r.Inspect(ctx, path)
 		if err == nil {
+			if opts.CloudCover != nil {
+				raster.OverrideCloudCover(&inspection, opts.CloudCover, "explicit_override", strconv.FormatFloat(*opts.CloudCover, 'g', -1, 64))
+			}
 			i := catalog.Imagery{CatalogID: opts.Catalog, ImageID: event.ImageID, DisplayName: filepath.Base(path), AcquiredAt: inspection.AcquiredAt, CloudCover: inspection.CloudCover, Footprint: inspection.Footprint, Checksum: inspection.Checksum, AssetLocation: inspection.AssetLocation, Width: inspection.Width, Height: inspection.Height, BandCount: inspection.BandCount, SourceCRS: inspection.SourceCRS, Metadata: inspection.Metadata, Segments: inspection.Segments}
 			if opts.CloudCover != nil {
 				i.CloudCover = opts.CloudCover

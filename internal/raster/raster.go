@@ -195,6 +195,18 @@ func sameSource(a, b os.FileInfo) bool {
 func ParseInfo(data []byte) (Inspection, error) { return parseInfo(data, nil) }
 
 func parseInfo(data []byte, transform func(info) (geo.Geometry, error)) (Inspection, error) {
+	result, err := parseRasterInfo(data, transform)
+	if err == nil && result.Format == "NITF" {
+		var raw info
+		_ = json.Unmarshal(data, &raw)
+		result.Segments = []Segment{{Index: 0, Metadata: result.Metadata, CloudCover: result.CloudCover}}
+		enrichNITF(&result, raw)
+		result.Segments = nil // ParseInfo's existing single-raster contract.
+	}
+	return result, err
+}
+
+func parseRasterInfo(data []byte, transform func(info) (geo.Geometry, error)) (Inspection, error) {
 	var raw info
 	var result Inspection
 	if err := json.Unmarshal(data, &raw); err != nil {

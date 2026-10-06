@@ -12,6 +12,7 @@ import type { MapHandle } from "./MapCanvas";
 import { APIError, request, search } from "./types";
 import type { Area, Basemap, Imagery, Page } from "./types";
 import { CatalogFilters } from "./CatalogFilters";
+import { CommercialNITF } from "./CommercialNITF";
 import { appliedFilters, buildSearch, defaultFilters, filterKey, removeFilter } from "./filters";
 import type { FilterDraft, FilterErrors } from "./filters";
 import { parseSearchArea } from "./geojson";
@@ -477,6 +478,7 @@ function CatalogApp({ session }: { session: Session }) {
                 </dd>
               </div>
             </dl>
+            {selected.format === "NITF" && <CommercialNITF metadata={selected.metadata} acquiredAt={selected.acquired_at} />}
             <div className="metadata-disclosures">
               {selected.segments && selected.segments.length > 0 && (
                 <details>
@@ -486,6 +488,7 @@ function CatalogApp({ session }: { session: Session }) {
                       <summary>
                         Segment {segment.index}: {segment.width} × {segment.height}, {segment.band_count} bands
                       </summary>
+                      {selected.format === "NITF" && <CommercialNITF metadata={segment.metadata} acquiredAt={segment.acquired_at} />}
                       <pre>{JSON.stringify(segment, null, 2)}</pre>
                     </details>
                   ))}

@@ -729,3 +729,7 @@ h2 {
   .workspace { min-width: 0; }
   .results-panel { height: 470px; }
 }
+.commercial-nitf { margin-block: 1rem; padding: 1rem; border: 1px solid var(--border, #8886); border-radius: .5rem; }
+.commercial-nitf h3 { margin-top: 0; }
+.commercial-nitf small { opacity: .75; overflow-wrap: anywhere; }
+.commercial-nitf pre { max-height: 24rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }

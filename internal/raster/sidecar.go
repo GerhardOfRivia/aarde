@@ -252,8 +252,8 @@ func applySidecar(path string, result *Inspection) {
 	annotations["xml_sidecar"], _ = json.Marshal(m)
 	metadata["_aarde"], _ = json.Marshal(annotations)
 	result.Metadata, _ = json.Marshal(metadata)
-	if m.CloudCover != nil {
-		result.CloudCover = m.CloudCover
+	if raw, ok := m.SourceFields[imagePath+"CLOUDCOVER"]; ok {
+		OverrideCloudCover(result, m.CloudCover, "xml_sidecar/"+imagePath+"CLOUDCOVER", raw)
 	}
 	if m.AcquiredAt != nil {
 		result.AcquiredAt = m.AcquiredAt

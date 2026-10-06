@@ -43,7 +43,7 @@ func inspectContainer(ctx context.Context, path string, data []byte) (Inspection
 		}
 		delete(selected.Metadata, "SUBDATASETS")
 		segmentData, _ = json.Marshal(selected)
-		part, err := parseInfo(segmentData, func(i info) (geo.Geometry, error) { return gcpFootprint(ctx, selector, i) })
+		part, err := parseRasterInfo(segmentData, func(i info) (geo.Geometry, error) { return gcpFootprint(ctx, selector, i) })
 		if err != nil {
 			return result, fmt.Errorf("NITF image segment %d: %w", index, err)
 		}
@@ -53,6 +53,7 @@ func inspectContainer(ctx context.Context, path string, data []byte) (Inspection
 		result.Segments = append(result.Segments, Segment{Index: index, SourceCRS: part.SourceCRS, Width: part.Width, Height: part.Height, BandCount: part.BandCount, AcquiredAt: part.AcquiredAt, CloudCover: part.CloudCover, Footprint: part.Footprint, Metadata: part.Metadata})
 	}
 	if count == 1 {
+		enrichNITF(&result, raw)
 		return result, nil
 	}
 	result.Width, result.Height, result.BandCount = 0, 0, 0
@@ -78,6 +79,13 @@ func inspectContainer(ctx context.Context, path string, data []byte) (Inspection
 		}
 	}
 	metadata[""], _ = json.Marshal(header)
+	// These are the unchanged container GDAL exposures. Their actual TRE storage
+	// scopes are recorded separately; they are not all file-level evidence.
+	for _, domain := range []string{"TRE", "xml:TRE"} {
+		if value, ok := raw.Metadata[domain]; ok {
+			metadata[domain] = value
+		}
+	}
 	result.Metadata, _ = json.Marshal(metadata)
 	features := make([]any, 0, count)
 	for _, s := range result.Segments {
@@ -100,5 +108,8 @@ func inspectContainer(ctx context.Context, path string, data []byte) (Inspection
 		return result, fmt.Errorf("invalid NITF footprint union output")
 	}
 	result.Footprint, err = catalogFootprint(collection.Features[0].Geometry)
+	if err == nil {
+		enrichNITF(&result, raw)
+	}
 	return result, err
 }
