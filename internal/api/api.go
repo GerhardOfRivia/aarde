@@ -64,13 +64,13 @@ type VersionResponse struct {
 	Version string `json:"version"`
 }
 
-func Routes(service *catalog.Service, version string, access Access, basemap string) http.Handler {
-	router, _ := routes(service, version, access, basemap)
+func Routes(service *catalog.Service, version string, access Access, basemap string, options ...raster.ViewerOptions) http.Handler {
+	router, _ := routes(service, version, access, basemap, options...)
 	return router
 }
 
 // Return the same read allowlist used by authentication to render the API docs.
-func routes(service *catalog.Service, version string, access Access, basemap string) (chi.Router, map[string]bool) {
+func routes(service *catalog.Service, version string, access Access, basemap string, options ...raster.ViewerOptions) (chi.Router, map[string]bool) {
 	h := Handler{catalog: service}
 	r := chi.NewRouter()
 	reads := make(map[string]bool)
@@ -97,6 +97,15 @@ func routes(service *catalog.Service, version string, access Access, basemap str
 	// The POST body carries search geometry; this endpoint never mutates the catalog.
 	read(http.MethodPost, "/imagery/search", h.search)
 	read(http.MethodGet, "/imagery/{catalogID}/{imageID}", h.get)
+	opts := raster.DefaultViewerOptions()
+	if len(options) > 0 {
+		opts = options[0]
+	}
+	viewer := newViewerHandler(service, opts)
+	// Source rendering always requires bearer auth, including public-read catalogs.
+	r.Get("/imagery/{catalogID}/{imageID}/viewer", viewer.serve)
+	r.Get("/imagery/{catalogID}/{imageID}/viewer/layers/{layerID}/image.png", viewer.serve)
+	r.Get("/imagery/{catalogID}/{imageID}/viewer/layers/{layerID}/geometry", viewer.serve)
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) { Error(w, 404, "not_found", "API route not found") })
 	r.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
 		Error(w, 405, "method_not_allowed", "method not allowed")

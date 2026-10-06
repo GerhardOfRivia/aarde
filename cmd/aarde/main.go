@@ -104,7 +104,7 @@ func runWithInput(ctx context.Context, args []string, in io.Reader, out io.Write
 			return err
 		}
 		defer db.Close()
-		return server.Run(ctx, cfg.ListenAddress, catalog.New(db), version, tokenPath, cfg.WebPublicRead, cfg.WebBasemap)
+		return server.Run(ctx, cfg.ListenAddress, catalog.New(db), version, tokenPath, cfg.WebPublicRead, cfg.WebBasemap, cfg.Viewer)
 	case "inspect":
 		if len(args) != 2 {
 			return errors.New("usage: aarde inspect <image.tif|image.ntf|image.nitf>")

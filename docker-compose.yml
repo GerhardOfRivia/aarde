@@ -23,7 +23,19 @@ services:
       AARDE_LOG_LEVEL: ${AARDE_LOG_LEVEL:-info}
       AARDE_WEB_PUBLIC_READ: ${AARDE_WEB_PUBLIC_READ:-false}
       AARDE_WEB_BASEMAP: ${AARDE_WEB_BASEMAP:-offline}
+      AARDE_VIEWER_MAX_DIMENSION: ${AARDE_VIEWER_MAX_DIMENSION:-4096}
+      AARDE_VIEWER_LAYER_PIXELS: ${AARDE_VIEWER_LAYER_PIXELS:-8000000}
+      AARDE_VIEWER_SCENE_PIXELS: ${AARDE_VIEWER_SCENE_PIXELS:-24000000}
+      AARDE_VIEWER_CONCURRENT: ${AARDE_VIEWER_CONCURRENT:-2}
+      AARDE_VIEWER_TIMEOUT: ${AARDE_VIEWER_TIMEOUT:-20s}
+      AARDE_VIEWER_TEMP_DIR: /tmp
+      AARDE_VIEWER_SOURCE_ROOTS: /data
       AARDE_WEB_TOKEN_PATH: ${AARDE_WEB_TOKEN_PATH:-/home/aarde/.local/state/aarde/web.token}
+    # Bounded, disposable whole-segment display buffers. Original /data is read-only.
+    tmpfs:
+      - /tmp:size=768m,mode=1777
+    mem_limit: 2g
+    cpus: 2
     ports:
       - "127.0.0.1:8080:8080"
     volumes:

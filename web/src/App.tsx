@@ -7,6 +7,7 @@ import {
 } from "@mui/material";
 import { AccessGate, ThemeControl } from "./Access";
 import type { Session } from "./Access";
+import { ViewerLinks } from "./ViewerLinks";
 import { GeoJSONInput } from "./GeoJSONInput";
 import type { MapHandle } from "./MapCanvas";
 import { APIError, request, search } from "./types";
@@ -17,6 +18,7 @@ import { appliedFilters, buildSearch, defaultFilters, filterKey, removeFilter } 
 import type { FilterDraft, FilterErrors } from "./filters";
 import { parseSearchArea } from "./geojson";
 
+const ImageViewer = lazy(() => import("./ImageViewer"));
 const MapCanvas = lazy(() => import("./MapCanvas").then((module) => ({ default: module.MapCanvas })));
 
 const basemapKey = "aarde.web.basemap";
@@ -35,7 +37,15 @@ const date = (value: string | null) =>
 const empty: Page = { items: [], limit: 50, offset: 0, has_more: false };
 
 export default function App() {
-  return <AccessGate>{(session) => <CatalogApp session={session} />}</AccessGate>;
+  const [location, setLocation] = useState(() => ({ path: window.location.pathname, query: window.location.search }));
+  useEffect(() => {
+    const update = () => setLocation({ path: window.location.pathname, query: window.location.search });
+    window.addEventListener("popstate", update);
+    return () => window.removeEventListener("popstate", update);
+  }, []);
+  return <AccessGate>{(session) => location.path === "/image-viewer"
+    ? <Suspense fallback={<p>Loading Image Viewer…</p>}><ImageViewer key={location.query} session={session} query={location.query} /></Suspense>
+    : <CatalogApp session={session} />}</AccessGate>;
 }
 
 function CatalogApp({ session }: { session: Session }) {
@@ -427,6 +437,11 @@ function CatalogApp({ session }: { session: Session }) {
               ? selected.image_id
               : "Select an image to inspect its metadata"}
           </h2>
+          {selected && (
+            <span>
+              <ViewerLinks catalog={selected.catalog_id} image={selected.image_id} />
+            </span>
+          )}
         </div>
         {selected ? (
           <>

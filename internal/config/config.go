@@ -2,14 +2,17 @@ package config
 
 import (
 	"fmt"
+	"github.com/GerhardOfRivia/aarde/internal/raster"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Config struct {
+	Viewer                     raster.ViewerOptions
 	DatabaseURL, ListenAddress string
 	LogLevel                   slog.Level
 	WebTokenPath               string
@@ -44,6 +47,44 @@ func Load() (Config, error) {
 	case "osm", "offline", "none":
 	default:
 		return c, fmt.Errorf("AARDE_WEB_BASEMAP must be osm, offline, or none, got %q", c.WebBasemap)
+	}
+	c.Viewer = raster.DefaultViewerOptions()
+	for key, dst := range map[string]*int{"AARDE_VIEWER_MAX_DIMENSION": &c.Viewer.MaxDimension, "AARDE_VIEWER_CONCURRENT": &c.Viewer.Concurrent} {
+		if value := os.Getenv(key); value != "" {
+			n, err := strconv.Atoi(value)
+			if err != nil {
+				return c, fmt.Errorf("%s must be an integer", key)
+			}
+			*dst = n
+		}
+	}
+	for key, dst := range map[string]*int64{"AARDE_VIEWER_LAYER_PIXELS": &c.Viewer.LayerPixels, "AARDE_VIEWER_SCENE_PIXELS": &c.Viewer.ScenePixels} {
+		if value := os.Getenv(key); value != "" {
+			n, err := strconv.ParseInt(value, 10, 64)
+			if err != nil {
+				return c, fmt.Errorf("%s must be an integer", key)
+			}
+			*dst = n
+		}
+	}
+	if value := os.Getenv("AARDE_VIEWER_TIMEOUT"); value != "" {
+		d, err := time.ParseDuration(value)
+		if err != nil {
+			return c, fmt.Errorf("AARDE_VIEWER_TIMEOUT: %w", err)
+		}
+		c.Viewer.Timeout = d
+	}
+	c.Viewer.TempDir = os.Getenv("AARDE_VIEWER_TEMP_DIR")
+	if value := os.Getenv("AARDE_VIEWER_SOURCE_ROOTS"); value != "" {
+		for _, root := range filepath.SplitList(value) {
+			if !filepath.IsAbs(root) || filepath.Clean(root) != root {
+				return c, fmt.Errorf("AARDE_VIEWER_SOURCE_ROOTS requires absolute clean directories")
+			}
+			c.Viewer.SourceRoots = append(c.Viewer.SourceRoots, root)
+		}
+	}
+	if err := c.Viewer.Validate(); err != nil {
+		return c, err
 	}
 	return c, nil
 }

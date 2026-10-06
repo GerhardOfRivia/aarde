@@ -3,7 +3,7 @@
   "info": {
     "title": "aarde API",
     "version": "dev",
-    "description": "Read-only imagery catalog API served by aarde. Imports are local CLI operations and are not exposed here.\n\nUse **Authorize** to enter the web token from the private token file named in the server startup log. Enter only the token, without the Bearer prefix. Swagger stores authorization in memory and clears it on reload.\n\nAll operations require authentication by default. With AARDE_WEB_PUBLIC_READ=true, registered reads including POST /api/v1/imagery/search accept anonymous requests; this served specification reflects that setting. Explicitly supplied invalid tokens are always rejected. API responses are not cached.\n\nThis reference and /openapi.json are public and contain no catalog data or credentials. Try it out sends real requests to this server."
+    "description": "Read-only imagery catalog API served by aarde. Imports are local CLI operations and are not exposed here.\n\nUse **Authorize** to enter the web token from the private token file named in the server startup log. Enter only the token, without the Bearer prefix. Swagger stores authorization in memory and clears it on reload.\n\nAll operations require authentication by default. With AARDE_WEB_PUBLIC_READ=true, registered reads including POST /api/v1/imagery/search accept anonymous requests; this served specification reflects that setting. Explicitly supplied invalid tokens are always rejected. API responses are not cached.\n\nThis reference and /openapi.json are public and contain no catalog data or credentials. Try it out sends real requests to this server.\n\nViewer manifest and layer content always require bearer authentication, even when catalog browsing is public."
   },
   "servers": [
     {
@@ -24,6 +24,10 @@
     {
       "name": "Catalog",
       "description": "Catalog metadata, exact lookup, and spatial search."
+    },
+    {
+      "name": "Viewer",
+      "description": "Authenticated, read-only whole-image rendering from cataloged original sources. No jobs, tiles or persistent derivatives."
     }
   ],
   "paths": {
@@ -624,6 +628,546 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/imagery/{catalogID}/{imageID}/viewer": {
+      "get": {
+        "operationId": "getImageViewer",
+        "summary": "Get the complete physical-file viewer manifest",
+        "tags": [
+          "Viewer"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "catalogID",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "description": "Exact, case-sensitive ID: 1\u2013255 UTF-8 bytes, no slashes, backslashes, control characters, or surrounding whitespace."
+            },
+            "description": "Catalog identifier."
+          },
+          {
+            "name": "imageID",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "description": "Exact, case-sensitive ID: 1\u2013255 UTF-8 bytes, no slashes, backslashes, control characters, or surrounding whitespace."
+            },
+            "description": "Image identifier within the catalog."
+          },
+          {
+            "name": "resolution",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "auto",
+                "preview",
+                "native"
+              ],
+              "default": "auto"
+            },
+            "description": "Whole-image display budget. Native is rejected if any scene/layer limit is exceeded."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewerManifest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid identifiers or rendering parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer token required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Catalog source or layer unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "408": {
+            "description": "Request cancelled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Source changed; reload manifest",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported or failed decoding/registration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Whole-image resolution exceeds configured limits",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Catalog failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Render capacity exhausted; retry later",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Request time limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Always authenticated. One complete segment image per raster response. Placement mesh maps original pixel edges into a common image-coordinate plane (x right, y up). Display downsampling never changes placement. Geometry coordinates use this same manifest coordinate system, not RFC7946 longitude/latitude. Opacity/pan/zoom do not request content. Cloud grids support NCDRD 2010 Byte values 0/255 with reserved values shown distinctly; CSSHPA v01 polygons are bounded and transformed. No RPC/DEM orthorectification."
+      }
+    },
+    "/api/v1/imagery/{catalogID}/{imageID}/viewer/layers/{layerID}/image.png": {
+      "get": {
+        "operationId": "getViewerImage",
+        "summary": "Render one complete raster segment",
+        "tags": [
+          "Viewer"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "catalogID",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "description": "Exact, case-sensitive ID: 1\u2013255 UTF-8 bytes, no slashes, backslashes, control characters, or surrounding whitespace."
+            },
+            "description": "Catalog identifier."
+          },
+          {
+            "name": "imageID",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "description": "Exact, case-sensitive ID: 1\u2013255 UTF-8 bytes, no slashes, backslashes, control characters, or surrounding whitespace."
+            },
+            "description": "Image identifier within the catalog."
+          },
+          {
+            "name": "resolution",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "auto",
+                "preview",
+                "native"
+              ],
+              "default": "auto"
+            },
+            "description": "Whole-image display budget. Native is rejected if any scene/layer limit is exceeded."
+          },
+          {
+            "name": "layerID",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Opaque stable ID from this parent manifest."
+          },
+          {
+            "name": "revision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "description": "Source fingerprint from the manifest; stale content receives 409."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid identifiers or rendering parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer token required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Catalog source or layer unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "408": {
+            "description": "Request cancelled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Source changed; reload manifest",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported or failed decoding/registration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Whole-image resolution exceeds configured limits",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Catalog failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Render capacity exhausted; retry later",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Request time limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Always authenticated. One complete segment image per raster response. Placement mesh maps original pixel edges into a common image-coordinate plane (x right, y up). Display downsampling never changes placement. Geometry coordinates use this same manifest coordinate system, not RFC7946 longitude/latitude. Opacity/pan/zoom do not request content. Cloud grids support NCDRD 2010 Byte values 0/255 with reserved values shown distinctly; CSSHPA v01 polygons are bounded and transformed. No RPC/DEM orthorectification."
+      }
+    },
+    "/api/v1/imagery/{catalogID}/{imageID}/viewer/layers/{layerID}/geometry": {
+      "get": {
+        "operationId": "getViewerGeometry",
+        "summary": "Get bounded cloud polygons in viewer coordinates",
+        "tags": [
+          "Viewer"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "catalogID",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "description": "Exact, case-sensitive ID: 1\u2013255 UTF-8 bytes, no slashes, backslashes, control characters, or surrounding whitespace."
+            },
+            "description": "Catalog identifier."
+          },
+          {
+            "name": "imageID",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "description": "Exact, case-sensitive ID: 1\u2013255 UTF-8 bytes, no slashes, backslashes, control characters, or surrounding whitespace."
+            },
+            "description": "Image identifier within the catalog."
+          },
+          {
+            "name": "resolution",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "auto",
+                "preview",
+                "native"
+              ],
+              "default": "auto"
+            },
+            "description": "Whole-image display budget. Native is rejected if any scene/layer limit is exceeded."
+          },
+          {
+            "name": "layerID",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Opaque stable ID from this parent manifest."
+          },
+          {
+            "name": "revision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "description": "Source fingerprint from the manifest; stale content receives 409."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/geo+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewerGeometry"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid identifiers or rendering parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer token required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Catalog source or layer unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "408": {
+            "description": "Request cancelled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Source changed; reload manifest",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported or failed decoding/registration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Whole-image resolution exceeds configured limits",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Catalog failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Render capacity exhausted; retry later",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Request time limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Always authenticated. One complete segment image per raster response. Placement mesh maps original pixel edges into a common image-coordinate plane (x right, y up). Display downsampling never changes placement. Geometry coordinates use this same manifest coordinate system, not RFC7946 longitude/latitude. Opacity/pan/zoom do not request content. Cloud grids support NCDRD 2010 Byte values 0/255 with reserved values shown distinctly; CSSHPA v01 polygons are bounded and transformed. No RPC/DEM orthorectification."
       }
     }
   },
@@ -1360,6 +1904,264 @@
           "cloud_cover",
           "footprint",
           "metadata"
+        ]
+      },
+      "ViewerLayer": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "registration": {
+            "type": "string"
+          },
+          "placement": {
+            "type": "string"
+          },
+          "content_url": {
+            "type": "string"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "rendering": {
+            "type": "string"
+          },
+          "unsupported": {
+            "type": "string"
+          },
+          "segment_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "des_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "display_width": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "display_height": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "order": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "mesh_size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "imagery",
+              "cloud_grid",
+              "cloud_shapes"
+            ]
+          },
+          "extent": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 4,
+            "maxItems": 4
+          },
+          "mesh": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "opacity": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "legend": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "registration",
+          "placement",
+          "content_url",
+          "content_type",
+          "rendering",
+          "width",
+          "height",
+          "display_width",
+          "display_height",
+          "order",
+          "mesh_size",
+          "role",
+          "extent",
+          "mesh",
+          "opacity",
+          "warnings"
+        ]
+      },
+      "ViewerManifest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "catalog_id": {
+            "type": "string"
+          },
+          "image_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "coordinate_system": {
+            "type": "string"
+          },
+          "resolution": {
+            "type": "string"
+          },
+          "cloud_status": {
+            "type": "string"
+          },
+          "extent": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 4,
+            "maxItems": 4
+          },
+          "layers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ViewerLayer"
+            }
+          },
+          "native_available": {
+            "type": "boolean"
+          },
+          "display_pixels": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "estimated_memory_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ncdrd_assessment": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "catalog_id",
+          "image_id",
+          "name",
+          "revision",
+          "format",
+          "coordinate_system",
+          "resolution",
+          "cloud_status",
+          "extent",
+          "layers",
+          "native_available",
+          "display_pixels",
+          "estimated_memory_bytes",
+          "warnings"
+        ]
+      },
+      "ViewerGeometry": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "FeatureCollection"
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "Feature"
+                },
+                "properties": {
+                  "type": "object"
+                },
+                "geometry": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "enum": [
+                        "Polygon",
+                        "MultiPolygon"
+                      ]
+                    },
+                    "coordinates": {
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "coordinates"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "properties",
+                "geometry"
+              ]
+            }
+          }
+        },
+        "required": [
+          "type",
+          "features"
         ]
       }
     },

@@ -12,12 +12,13 @@ import (
 
 	"github.com/GerhardOfRivia/aarde/internal/api"
 	"github.com/GerhardOfRivia/aarde/internal/catalog"
+	"github.com/GerhardOfRivia/aarde/internal/raster"
 	"github.com/GerhardOfRivia/aarde/web"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-func Handler(service *catalog.Service, version string, access api.Access, basemap string) http.Handler {
+func Handler(service *catalog.Service, version string, access api.Access, basemap string, options ...raster.ViewerOptions) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(logging)
@@ -32,7 +33,7 @@ func Handler(service *catalog.Service, version string, access api.Access, basema
 			next.ServeHTTP(w, r)
 		})
 	})
-	r.Mount("/api/v1", api.Routes(service, version, access, basemap))
+	r.Mount("/api/v1", api.Routes(service, version, access, basemap, options...))
 	r.Handle("/api", access.Protect(http.HandlerFunc(apiNotFound)))
 	r.Handle("/api/*", access.Protect(http.HandlerFunc(apiNotFound)))
 	assets := web.Assets()
@@ -94,7 +95,7 @@ func apiNotFound(w http.ResponseWriter, r *http.Request) {
 	api.Error(w, http.StatusNotFound, "not_found", "API route not found")
 }
 
-func Run(ctx context.Context, address string, service *catalog.Service, version, tokenPath string, publicRead bool, basemap string) error {
+func Run(ctx context.Context, address string, service *catalog.Service, version, tokenPath string, publicRead bool, basemap string, options ...raster.ViewerOptions) error {
 	// Bind first: a failed second startup must not rotate a running server's token.
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
@@ -106,7 +107,7 @@ func Run(ctx context.Context, address string, service *catalog.Service, version,
 		return err
 	}
 	defer removeAccessToken(tokenPath, token)
-	srv := &http.Server{Addr: address, Handler: Handler(service, version, api.Access{Token: token, PublicRead: publicRead}, basemap), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 32 << 10}
+	srv := &http.Server{Addr: address, Handler: Handler(service, version, api.Access{Token: token, PublicRead: publicRead}, basemap, options...), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 32 << 10}
 	done := make(chan error, 1)
 	go func() { done <- srv.Serve(listener) }()
 	slog.Info("aarde started", "address", listener.Addr().String(), "token_file", tokenPath, "public_read", publicRead)

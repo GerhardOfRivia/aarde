@@ -74,3 +74,21 @@ func TestOfflineBasemapAssets(t *testing.T) {
 		t.Fatal("missing bundled data provenance")
 	}
 }
+
+func TestImageViewerDirectNavigationAndRefresh(t *testing.T) {
+	h := Handler(nil, "test", api.Access{Token: "secret"}, "none")
+	for range 2 {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("GET", "/image-viewer?catalog=other&image=same", nil))
+		if w.Code != 200 || !strings.Contains(w.Body.String(), `<div id="root">`) {
+			t.Fatalf("direct SPA URL: %d %s", w.Code, w.Body.String())
+		}
+	}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/api/v1/imagery/default/image/viewer/not-a-route", nil)
+	r.Header.Set("Authorization", "Bearer secret")
+	h.ServeHTTP(w, r)
+	if w.Code != 404 || strings.Contains(w.Body.String(), "<html") {
+		t.Fatal("viewer API error masked by frontend")
+	}
+}

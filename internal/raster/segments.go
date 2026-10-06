@@ -23,6 +23,8 @@ func inspectContainer(ctx context.Context, path string, data []byte) (Inspection
 	}
 	var result Inspection
 	totalMetadata := 0
+	var selectedImages []info
+	auxiliary := map[int]bool{}
 	for index := 0; index < count; index++ {
 		selector := fmt.Sprintf("NITF_IM:%d:%s", index, path)
 		segmentData, err := runGDAL(ctx, "gdalinfo", nil, 16<<20, "-json", "-noct", "-norat", "-mdd", "IMAGE_STRUCTURE", "-mdd", "RPC", "-mdd", "TRE", "-mdd", "xml:TRE", selector)
@@ -43,14 +45,70 @@ func inspectContainer(ctx context.Context, path string, data []byte) (Inspection
 		}
 		delete(selected.Metadata, "SUBDATASETS")
 		segmentData, _ = json.Marshal(selected)
+		selectedImages = append(selectedImages, selected)
 		part, err := parseRasterInfo(segmentData, func(i info) (geo.Geometry, error) { return gcpFootprint(ctx, selector, i) })
 		if err != nil {
-			return result, fmt.Errorf("NITF image segment %d: %w", index, err)
+			// Only an explicitly ICAT=CLOUD auxiliary can defer geographic
+			// validation to reference coverage; unsupported registration stays explicit. Primary imagery
+			// keeps the strict affine/GCP validation above.
+			if strings.TrimSpace(scalarMetadata(selected.Metadata)[""]["NITF_ICAT"]) != "CLOUD" || len(selected.Size) != 2 || selected.Size[0] <= 0 || selected.Size[1] <= 0 || len(selected.Bands) == 0 {
+				return result, fmt.Errorf("NITF image segment %d: %w", index, err)
+			}
+			auxiliary[index] = true
+			m, _ := json.Marshal(selected.Metadata)
+			part = Inspection{Format: "NITF", Width: selected.Size[0], Height: selected.Size[1], BandCount: len(selected.Bands), Metadata: m}
 		}
 		if index == 0 {
 			result = part
 		}
 		result.Segments = append(result.Segments, Segment{Index: index, SourceCRS: part.SourceCRS, Width: part.Width, Height: part.Height, BandCount: part.BandCount, AcquiredAt: part.AcquiredAt, CloudCover: part.CloudCover, Footprint: part.Footprint, Metadata: part.Metadata})
+	}
+	if len(auxiliary) > 0 {
+		layers := make([]ViewerLayer, count)
+		for i, raw := range selectedImages {
+			role := "imagery"
+			if strings.TrimSpace(scalarMetadata(raw.Metadata)[""]["NITF_ICAT"]) == "CLOUD" {
+				role = "cloud_grid"
+			}
+			layers[i] = ViewerLayer{raw: raw, Width: raw.Size[0], Height: raw.Size[1], Role: role}
+		}
+		plan := &ViewerPlan{Manifest: ViewerManifest{Format: "NITF", Layers: layers}}
+		if err := placeViewer(ctx, plan); err != nil {
+			return result, err
+		}
+		layouts := imageLayouts(layers)
+		for i := range auxiliary {
+			if plan.Manifest.Layers[i].Unsupported != "" {
+				result.Segments[i].Metadata = storeAnnotation(result.Segments[i].Metadata, "cloud_registration_warning", plan.Manifest.Layers[i].Unsupported)
+			}
+			r, _ := cloudGridRecord(selectedImages[i], i)
+			sensor := strings.TrimSpace(r.Fields["REG_SENSOR"])
+			reference := -1
+			for j, raw := range selectedImages {
+				h := scalarMetadata(raw.Metadata)[""]
+				if layouts[j].valid && layouts[j].root == j && strings.TrimSpace(h["NITF_ICAT"]) == sensor {
+					reference = j
+				}
+			}
+			if reference < 0 || auxiliary[reference] {
+				reference = -1
+				for j := range selectedImages {
+					if !auxiliary[j] {
+						reference = j
+						break
+					}
+				}
+				if reference < 0 {
+					return result, fmt.Errorf("NITF auxiliary cloud segment %d: no primary imagery coverage", i)
+				}
+			}
+			// Catalog coverage for this auxiliary is inherited from its reference
+			// image, explicitly labelled; never use mask bounds in the file union.
+			result.Segments[i].SourceCRS = result.Segments[reference].SourceCRS
+			result.Segments[i].Footprint = result.Segments[reference].Footprint
+			result.Segments[i].Metadata = storeAnnotation(result.Segments[i].Metadata, "footprint_method", "csccga_reference_coverage")
+			result.Segments[i].Metadata = storeAnnotation(result.Segments[i].Metadata, "format", "NITF")
+		}
 	}
 	if count == 1 {
 		enrichNITF(&result, raw)
@@ -89,6 +147,9 @@ func inspectContainer(ctx context.Context, path string, data []byte) (Inspection
 	result.Metadata, _ = json.Marshal(metadata)
 	features := make([]any, 0, count)
 	for _, s := range result.Segments {
+		if auxiliary[s.Index] || strings.TrimSpace(scalarMetadata(decodeMetadata(s.Metadata))[""]["NITF_ICAT"]) == "CLOUD" {
+			continue
+		}
 		features = append(features, map[string]any{"type": "Feature", "properties": map[string]any{}, "geometry": s.Footprint})
 	}
 	input, _ := json.Marshal(map[string]any{"type": "FeatureCollection", "name": "footprints", "features": features})

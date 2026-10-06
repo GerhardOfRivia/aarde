@@ -87,3 +87,20 @@ func TestWebBasemap(t *testing.T) {
 		})
 	}
 }
+
+func TestViewerLimits(t *testing.T) {
+	for key, value := range map[string]string{"AARDE_VIEWER_MAX_DIMENSION": "9000", "AARDE_VIEWER_LAYER_PIXELS": "0", "AARDE_VIEWER_SCENE_PIXELS": "1", "AARDE_VIEWER_CONCURRENT": "0", "AARDE_VIEWER_TIMEOUT": "21s", "AARDE_VIEWER_SOURCE_ROOTS": "relative/path"} {
+		t.Run(key, func(t *testing.T) {
+			t.Setenv(key, value)
+			if _, err := Load(); err == nil {
+				t.Fatalf("accepted unsafe %s", key)
+			}
+		})
+	}
+	t.Setenv("AARDE_VIEWER_MAX_DIMENSION", "2048")
+	t.Setenv("AARDE_VIEWER_CONCURRENT", "1")
+	c, err := Load()
+	if err != nil || c.Viewer.MaxDimension != 2048 || c.Viewer.Concurrent != 1 {
+		t.Fatalf("viewer config: %+v %v", c.Viewer, err)
+	}
+}

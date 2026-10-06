@@ -1,5 +1,7 @@
 # Commercial NITF metadata
 
+[Documentation index](README.md) · [Project README](../README.md)
+
 Aarde enriches the metadata already collected by GDAL. The source format remains
 `NITF`. `metadata._aarde.commercial_nitf` version 1 contains TRE occurrences,
 normalized values, cloud selection, a file-profile assessment, DES coverage,
@@ -195,3 +197,19 @@ customer imagery or runtime downloads; they are not certified NCDRD products.
 Use `make integration` for the full GDAL/PostGIS suite, and `npm test` plus
 `npm run build` in `web` for frontend checks. `go test ./...` skips integration
 coverage when the corresponding GDAL tools/database are unavailable.
+
+
+## Native Image Viewer
+
+The [Image Viewer](image-viewer.md) now renders native segments and supported spatial
+cloud data. Its cloud-grid reader requires `ICAT=CLOUD` and an image-scoped, validated
+CSCCGA record. This is separate from the catalog's evidence-based NCDRD assessment and
+does not imply standards conformance. Scene cloud percentages never create overlays.
+
+Cloud-grid auxiliaries without independent georeferencing no longer cause primary
+imagery ingestion to fail. Primary-image affine/GCP requirements are unchanged.
+Auxiliary catalog coverage is explicitly annotated `csccga_reference_coverage`; it is
+inherited coverage for catalog compatibility, not measured cloud geometry. Unsupported
+registration is retained as `cloud_registration_warning`. Auxiliaries are excluded from
+the physical-file footprint union. The viewer always uses its own original-segment
+placement and CSCCGA geometry, never this inherited footprint for layer placement.

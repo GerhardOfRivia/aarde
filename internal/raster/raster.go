@@ -89,7 +89,7 @@ func (b *cappedBuffer) Write(p []byte) (int, error) {
 // All subprocesses and the checksum share the inspection's two-minute budget.
 func runGDAL(ctx context.Context, name string, input io.Reader, limit int, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Env = append(os.Environ(), "GDAL_PAM_ENABLED=NO", "NITF_OPEN_UNDERLYING_DS=YES")
+	cmd.Env = append(os.Environ(), "GDAL_PAM_ENABLED=NO", "NITF_OPEN_UNDERLYING_DS=YES", "GDAL_CACHEMAX=64", "GDAL_NUM_THREADS=1", "PROJ_NETWORK=OFF")
 	cmd.WaitDelay = time.Second
 	stdout := &cappedBuffer{max: limit}
 	stderr := &cappedBuffer{max: 16 << 10}

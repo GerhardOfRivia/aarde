@@ -30,6 +30,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends gdal-bin ca-cer
 COPY --from=binary /out/aarde /usr/local/bin/aarde
 USER aarde
 WORKDIR /home/aarde
+# Viewer buffers use disposable /tmp; configure a bounded tmpfs in deployment.
+ENV GDAL_CACHEMAX=64 GDAL_NUM_THREADS=1
 ENV AARDE_WEB_TOKEN_PATH=/home/aarde/.local/state/aarde/web.token
 EXPOSE 8080
 ENTRYPOINT ["aarde"]
