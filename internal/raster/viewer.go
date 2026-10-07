@@ -69,7 +69,7 @@ type ViewerLayer struct {
 	DisplayHeight int        `json:"display_height"`
 	Extent        [4]float64 `json:"extent"`
 	// Mesh is a row-major lattice of original-pixel edges, mapped to viewer x/y.
-	// Same-CRS affine placement uses a single cell (four corners), without warping pixels.
+	// Affine placement in the map CRS uses a single cell; reprojection/GCPs use a mesh.
 	Mesh         [][2]float64      `json:"mesh"`
 	MeshSize     int               `json:"mesh_size"`
 	Registration string            `json:"registration"`
@@ -167,7 +167,7 @@ func BuildViewer(ctx context.Context, path, checksum, format string, segments []
 	if err != nil {
 		return nil, err
 	}
-	p := &ViewerPlan{Path: path, Options: opts, Manifest: ViewerManifest{Revision: rev, Format: format, Resolution: resolution, CoordinateSystem: "image pixels: x right, y up; origin at reference image upper-left edge", CloudStatus: "absent", Warnings: []string{}, Layers: []ViewerLayer{}}}
+	p := &ViewerPlan{Path: path, Options: opts, Manifest: ViewerManifest{Revision: rev, Format: format, Resolution: resolution, CoordinateSystem: "Image coordinates; geographic placement unavailable", CloudStatus: "absent", Warnings: []string{}, Layers: []ViewerLayer{}}}
 	var annotations struct {
 		Aarde struct {
 			Commercial commercialNITF `json:"commercial_nitf"`

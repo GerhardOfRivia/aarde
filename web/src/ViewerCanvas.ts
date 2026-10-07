@@ -29,8 +29,12 @@ function triangle(ctx: CanvasRenderingContext2D, bitmap: ImageBitmap, source: nu
   ctx.transform(a, b, c, d, p0[0] - a * s0[0] - c * s0[1], p0[1] - b * s0[0] - d * s0[1]);
   ctx.drawImage(bitmap, 0, 0); ctx.restore();
 }
-function raster(ctx: CanvasRenderingContext2D, frame: FrameState, l: ViewerLayer, bitmap: ImageBitmap) {
-  const n = l.mesh_size, pts = l.mesh.map(p => point(frame, p));
+function raster(ctx: CanvasRenderingContext2D, frame: FrameState, l: ViewerLayer, bitmap: ImageBitmap, ratio: number) {
+  const n = l.mesh_size, pts = l.mesh.map(p => {
+    const xy = point(frame, p);
+    // Shared mesh edges must land on identical device-pixel boundaries.
+    return n === 1 ? xy : xy.map(v => Math.round(v * ratio) / ratio);
+  });
   ctx.imageSmoothingEnabled = false;
   // Affine registration (including rotation/shear) needs no clipped mesh seams.
   if (n === 1) {
@@ -47,9 +51,10 @@ function raster(ctx: CanvasRenderingContext2D, frame: FrameState, l: ViewerLayer
 export class ViewerCanvas {
   readonly map: Map;
   private canvas = document.createElement('canvas');
+  private meshCanvas = document.createElement('canvas');
   private layer: Layer;
   constructor(target: HTMLElement, entries: () => Iterable<LayerEntry<ViewerPixels>>) {
-    const canvas = this.canvas;
+    const canvas = this.canvas, meshCanvas = this.meshCanvas;
     canvas.style.position = 'absolute'; canvas.style.inset = '0';
     this.layer = new Layer({ render(frame) {
       // One compositing surface for the entire scene, independent of layer count.
@@ -60,7 +65,19 @@ export class ViewerCanvas {
       for (const entry of entries()) {
         if (!entry.visible || !entry.data || entry.opacity === 0) continue;
         ctx.globalAlpha = entry.opacity;
-        if (entry.data.bitmap) raster(ctx, frame, entry.layer, entry.data.bitmap);
+        if (entry.data.bitmap) {
+          if (entry.layer.mesh_size === 1) raster(ctx, frame, entry.layer, entry.data.bitmap, ratio);
+          else {
+            // Assemble this layer before applying opacity. Additive triangle
+            // coverage closes antialiased shared edges without dark seams or
+            // blending the triangles directly into earlier imagery/clouds.
+            meshCanvas.width = canvas.width; meshCanvas.height = canvas.height;
+            const meshContext = meshCanvas.getContext('2d')!;
+            meshContext.scale(ratio, ratio); meshContext.globalCompositeOperation = 'lighter';
+            raster(meshContext, frame, entry.layer, entry.data.bitmap, ratio);
+            ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(meshCanvas, 0, 0); ctx.restore();
+          }
+        }
         if (entry.data.geometry) {
           ctx.fillStyle = '#1ed7ff'; ctx.strokeStyle = '#15c9f7'; ctx.lineWidth = 2;
           for (const f of entry.data.geometry.features) {
@@ -80,5 +97,5 @@ export class ViewerCanvas {
   changed() { this.layer.changed(); }
   fit(extent: Extent) { this.map.getView().fit(extent, { size: this.map.getSize(), padding: [30, 30, 30, 30] }); }
   zoom(delta: number) { const view = this.map.getView(); view.animate({ zoom: (view.getZoom() ?? 0) + delta, duration: 150 }); }
-  dispose() { this.map.setTarget(undefined); this.map.dispose(); this.canvas.width = 0; this.canvas.height = 0; }
+  dispose() { this.map.setTarget(undefined); this.map.dispose(); this.canvas.width = 0; this.canvas.height = 0; this.meshCanvas.width = 0; this.meshCanvas.height = 0; }
 }

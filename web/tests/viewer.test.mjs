@@ -18,7 +18,7 @@ const { ViewerLinks } = await module('../src/ViewerLinks.tsx', { './viewer': vie
 const { viewerURL, viewerReference, ViewerLoader } = viewer;
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 const layers = Array.from({ length: 5 }, (_, i) => ({ id: `segment-${i}`, label: `Segment ${i}`, role: i === 4 ? 'cloud_grid' : 'imagery', order: i, opacity: i === 4 ? .4 : 1 }));
-test('every list item has safely encoded real navigation and new-tab links', async () => {
+test('selected catalog imagery has safely encoded real navigation and new-tab links', async () => {
   for (const catalog of ['default', 'a & b']) for (const image of ['same id', 'a?#é']) {
     const html = renderToStaticMarkup(React.createElement(ViewerLinks, { catalog, image }));
     const href = viewerURL(catalog, image).replaceAll('&', '&amp;');
@@ -27,7 +27,7 @@ test('every list item has safely encoded real navigation and new-tab links', asy
     assert.deepEqual(viewerReference(new URL(viewerURL(catalog, image), 'http://aarde').search), { catalog, image });
   }
   const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8');
-  assert.match(app, /page\.items\.map[\s\S]*<ViewerLinks catalog=\{item.catalog_id\} image=\{item.image_id\}/);
+  assert.match(app, /<ViewerLinks catalog=\{selected.catalog_id\} image=\{selected.image_id\}/);
   assert.notEqual(viewerURL('one', 'same'), viewerURL('two', 'same'));
 });
 test('direct URL resolution rejects missing, repeated, path, URL and malformed references', () => {

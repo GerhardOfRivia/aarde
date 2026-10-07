@@ -47,6 +47,95 @@ func snapshot(t *testing.T, path string) [32]byte {
 	}
 	return sha256.Sum256(data)
 }
+
+// Independently project catalog lon/lat as OpenLayers does, then apply only the
+// viewer's translation and uniform scale. The reference must never unrotate or
+// independently stretch the axes of the source image.
+func catalogViewerPoint(t *testing.T, p *ViewerPlan, lon, lat float64) [2]float64 {
+	t.Helper()
+	a := p.reference.Transform
+	if len(a) != 6 || a[2] != 0 || a[4] != 0 || a[1] <= 0 || a[5] != -a[1] || p.reference.CRS.WKT != "EPSG:3857" {
+		t.Fatalf("viewer must preserve catalog map shape: %+v", p.reference)
+	}
+	x := 6378137 * lon * math.Pi / 180
+	y := 6378137 * math.Log(math.Tan(math.Pi/4+lat*math.Pi/360))
+	return [2]float64{(x - a[0]) / a[1], (y - a[3]) / a[1]}
+}
+
+func assertViewerPoint(t *testing.T, got, want [2]float64) {
+	t.Helper()
+	if math.Hypot(got[0]-want[0], got[1]-want[1]) > 1e-6 {
+		t.Fatalf("viewer point %v differs from catalog projection %v", got, want)
+	}
+}
+
+func TestViewerMatchesCatalogFootprint(t *testing.T) {
+	testutil.RequireGDAL(t)
+	for _, kind := range []string{"rotated", "projected", "gcp"} {
+		t.Run(kind, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "scene")
+			switch kind {
+			case "rotated":
+				testutil.GDAL(t, "python3", "-c", `from osgeo import gdal, osr
+import sys
+d=gdal.GetDriverByName('GTiff').Create(sys.argv[1],16,8,1,gdal.GDT_Byte)
+s=osr.SpatialReference();s.ImportFromEPSG(4326)
+d.SetProjection(s.ExportToWkt());d.SetGeoTransform([-106,.05,.02,40,.01,-.08])
+d.GetRasterBand(1).Fill(42);d=None`, path)
+			case "projected":
+				testutil.GDAL(t, "gdal_create", "-of", "GTiff", "-outsize", "16", "8", "-burn", "42", "-a_srs", "EPSG:32613", "-a_ullr", "300000", "4400000", "310000", "4390000", path)
+			case "gcp":
+				testutil.NITF(t, path, "IGEOLO=400000N1060000W400000N1050000W390000N1043000W390000N1060000W")
+			}
+			in, err := Inspect(context.Background(), path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			p := viewerTestPlan(t, path, in)
+			l := p.Manifest.Layers[0]
+			if l.Registration != "Registered" {
+				t.Fatalf("cataloged georeferencing ignored: %+v", l)
+			}
+			var polygons [][][][]float64
+			if err := json.Unmarshal(in.Footprint.Coordinates, &polygons); err != nil {
+				t.Fatal(err)
+			}
+			n := l.MeshSize
+			// Walk the viewer's outer pixel edges in catalog perimeter order.
+			var boundary [][2]float64
+			for edge := range 4 {
+				for k := 0; k < n; k++ {
+					indexes := [4]int{k, k*(n+1) + n, n*(n+1) + n - k, (n - k) * (n + 1)}
+					boundary = append(boundary, l.Mesh[indexes[edge]])
+				}
+			}
+			ring := polygons[0][0]
+			for _, coord := range ring[:len(ring)-1] {
+				// GDAL affine extents can reverse winding and round lon/lat to
+				// seven decimals; TPS has all 64 unrounded edge samples.
+				want := catalogViewerPoint(t, p, coord[0], coord[1])
+				distance := math.Inf(1)
+				for _, got := range boundary {
+					distance = math.Min(distance, math.Hypot(got[0]-want[0], got[1]-want[1]))
+				}
+				if distance > 1e-4 {
+					t.Fatalf("catalog boundary %v is %g viewer units from image boundary", coord, distance)
+				}
+			}
+			before, _ := json.Marshal(l.Mesh)
+			p.Manifest.Resolution = "preview"
+			if err := planViewerResolution(&p.Manifest, DefaultViewerOptions()); err != nil {
+				t.Fatal(err)
+			}
+			after, _ := json.Marshal(p.Manifest.Layers[0].Mesh)
+			if !bytes.Equal(before, after) {
+				t.Fatal("display downsampling changed map shape")
+			}
+			rendered(t, p, "segment-0")
+		})
+	}
+}
+
 func TestViewerNativeCloudGridAndShapes(t *testing.T) {
 	testutil.RequireGDAL(t)
 	path := filepath.Join(t.TempDir(), "native.ntf")
@@ -81,12 +170,20 @@ func TestViewerNativeCloudGridAndShapes(t *testing.T) {
 			t.Fatalf("placement got %g want %g", got, want)
 		}
 	}
-	assertNear(p.Manifest.Layers[1].Extent[1], -8)
-	assertNear(p.Manifest.Layers[1].Extent[3], -4)
+	bottom := catalogViewerPoint(t, p, -105, 39)
+	middle := catalogViewerPoint(t, p, -105, 39.5)
+	assertNear(p.Manifest.Layers[1].Extent[1], bottom[1])
+	assertNear(p.Manifest.Layers[1].Extent[3], middle[1])
 	assertNear(cloud.Extent[0], 0)
-	assertNear(cloud.Extent[1], -8)
+	assertNear(cloud.Extent[1], bottom[1])
 	assertNear(cloud.Extent[2], 8)
 	assertNear(cloud.Extent[3], 0)
+	// A cloud cell at the attachment seam must follow the same nonlinear map
+	// transformation as both imagery constituents.
+	n := cloud.MeshSize
+	assertViewerPoint(t, cloud.Mesh[(n/2)*(n+1)], p.Manifest.Layers[1].Mesh[0])
+	first := p.Manifest.Layers[0]
+	assertViewerPoint(t, cloud.Mesh[(n/2)*(n+1)], first.Mesh[first.MeshSize*(first.MeshSize+1)])
 	im := rendered(t, p, cloud.ID)
 	_, _, _, clear := im.At(0, 0).RGBA()
 	r, g, b, a := im.At(1, 0).RGBA()
@@ -124,6 +221,8 @@ func TestViewerNativeCloudGridAndShapes(t *testing.T) {
 	}
 	assertNear(fc.Features[0].Geometry.Coordinates[0][0][0][0], 0)
 	assertNear(fc.Features[0].Geometry.Coordinates[0][0][0][1], 0)
+	shapeCorner := fc.Features[0].Geometry.Coordinates[0][0][2]
+	assertViewerPoint(t, [2]float64{shapeCorner[0], shapeCorner[1]}, catalogViewerPoint(t, p, -105.5, 39.5))
 	if snapshot(t, path) != before {
 		t.Fatal("source modified")
 	}

@@ -88,11 +88,17 @@ func transformPoints(ctx context.Context, points [][2]float64, from, to string) 
 	if from == to {
 		return points, nil
 	}
+	return gdalTransformPoints(ctx, points, "-s_srs", from, "-t_srs", to)
+}
+func gdalTransformPoints(ctx context.Context, points [][2]float64, args ...string) ([][2]float64, error) {
+	if len(points) == 0 {
+		return points, nil
+	}
 	var input strings.Builder
 	for _, p := range points {
-		fmt.Fprintf(&input, "%.15g %.15g\n", p[0], p[1])
+		fmt.Fprintf(&input, "%.17g %.17g\n", p[0], p[1])
 	}
-	data, err := runGDAL(ctx, "gdaltransform", strings.NewReader(input.String()), max(4096, len(points)*100), "-s_srs", from, "-t_srs", to)
+	data, err := runGDAL(ctx, "gdaltransform", strings.NewReader(input.String()), max(4096, len(points)*100), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -116,6 +122,46 @@ func transformPoints(ctx context.Context, points [][2]float64, from, to string) 
 	}
 	return result, nil
 }
+
+// Use the catalog map's projection. Only translate and uniformly scale it for
+// display: inverting a source affine would erase that image's rotation/shear.
+const viewerCRS = "EPSG:3857"
+
+func imageMapPoints(ctx context.Context, src ViewerLayer, pixels [][2]float64) ([][2]float64, error) {
+	if validAffine(src.raw) {
+		points := make([][2]float64, len(pixels))
+		for i, p := range pixels {
+			points[i] = affinePoint(src.raw.Transform, p[0], p[1])
+		}
+		return transformPoints(ctx, points, src.raw.CRS.WKT, viewerCRS)
+	}
+	if _, err := parseGCPs(src.raw.GCPs); err != nil {
+		return nil, err
+	}
+	// Match the catalog's bounded TPS georeferencing, including NITF selectors.
+	return gdalTransformPoints(ctx, pixels, "-tps", "-t_srs", viewerCRS, src.selector)
+}
+
+func imageViewerMesh(ctx context.Context, src ViewerLayer, ref info, x, y, width, height float64) ([][2]float64, int, error) {
+	n := 16
+	if validAffine(src.raw) && src.raw.CRS.WKT == viewerCRS {
+		n = 1
+	}
+	var pixels [][2]float64
+	for row := 0; row <= n; row++ {
+		for col := 0; col <= n; col++ {
+			pixels = append(pixels, [2]float64{x + float64(col)*width/float64(n), y + float64(row)*height/float64(n)})
+		}
+	}
+	points, err := imageMapPoints(ctx, src, pixels)
+	if err != nil {
+		return nil, 0, err
+	}
+	for i := range points {
+		points[i] = viewerPoint(ref, points[i])
+	}
+	return points, n, nil
+}
 func layerExtent(l *ViewerLayer) {
 	l.Extent = [4]float64{math.Inf(1), math.Inf(1), math.Inf(-1), math.Inf(-1)}
 	for _, p := range l.Mesh {
@@ -130,15 +176,24 @@ func placeViewer(ctx context.Context, p *ViewerPlan) error {
 	layouts := imageLayouts(layers)
 	refIndex := -1
 	for i, l := range layers {
-		if l.Role == "imagery" && validAffine(l.raw) {
-			refIndex = i
-			break
+		if l.Role != "imagery" {
+			continue
 		}
+		points, err := imageMapPoints(ctx, l, [][2]float64{{0, 0}, {1, 0}})
+		if err != nil {
+			continue
+		}
+		scale := math.Hypot(points[1][0]-points[0][0], points[1][1]-points[0][1])
+		if scale <= 0 || math.IsNaN(scale) || math.IsInf(scale, 0) {
+			continue
+		}
+		p.reference = info{Transform: []float64{points[0][0], scale, 0, points[0][1], 0, -scale}}
+		p.reference.CRS.WKT = viewerCRS
+		p.Manifest.CoordinateSystem = "North-up map view; same projection as the catalog (Web Mercator)"
+		refIndex = i
+		break
 	}
-	if refIndex >= 0 {
-		p.reference = layers[refIndex].raw
-	}
-	// A common reference-pixel plane avoids huge geographic coordinates and lets
+	// A common uniformly scaled map plane avoids huge coordinates and lets
 	// unregistered components remain inspectable, separated from registered data.
 	nextX := 0.0
 	groups := map[int]float64{}
@@ -156,44 +211,31 @@ func placeViewer(ctx context.Context, p *ViewerPlan) error {
 		if l.Role == "cloud_grid" {
 			continue
 		}
-		src := l.raw
+		src := *l
 		layout := layouts[i]
 		x, y := 0.0, 0.0
 		if layout.valid && layout.root != i {
-			src = layers[layout.root].raw
+			src = layers[layout.root]
 			x = layout.x - layouts[layout.root].x
 			y = layout.y - layouts[layout.root].y
 			l.Placement = "NITF IDLVL/IALVL/ILOC unit-magnification synthetic image"
 		} else {
 			l.Placement = "Segment affine geotransform"
-		}
-		n := 1
-		if validAffine(src) && validAffine(p.reference) && src.CRS.WKT != p.reference.CRS.WKT {
-			n = 16
-			l.Placement += "; GDAL CRS transformation approximated by a 16 × 16 display mesh"
-		}
-		var points [][2]float64
-		for row := 0; row <= n; row++ {
-			for col := 0; col <= n; col++ {
-				px, py := x+float64(col)*float64(max(l.Width, 1))/float64(n), y+float64(row)*float64(max(l.Height, 1))/float64(n)
-				if validAffine(src) && validAffine(p.reference) {
-					points = append(points, affinePoint(src.Transform, px, py))
-				} else {
-					points = append(points, [2]float64{px, -py})
-				}
+			if !validAffine(src.raw) {
+				l.Placement = "Segment GCP thin-plate spline (same method as catalog footprint)"
 			}
 		}
-		registered := validAffine(src) && validAffine(p.reference)
+		n := 1
+		var points [][2]float64
+		registered := validAffine(p.reference)
 		if registered {
 			var err error
-			points, err = transformPoints(ctx, points, src.CRS.WKT, p.reference.CRS.WKT)
+			points, n, err = imageViewerMesh(ctx, src, p.reference, x, y, float64(max(l.Width, 1)), float64(max(l.Height, 1)))
 			if err != nil {
 				registered = false
 				l.Warnings = append(l.Warnings, "Geographic transformation failed")
-			} else {
-				for j := range points {
-					points[j] = viewerPoint(p.reference, points[j])
-				}
+			} else if n > 1 {
+				l.Placement += "; Web Mercator transformation approximated by a 16 × 16 display mesh"
 			}
 		}
 		if registered {
@@ -256,7 +298,7 @@ func placeViewer(ctx context.Context, p *ViewerPlan) error {
 		if l.Role != "cloud_grid" {
 			continue
 		}
-		if err := placeCloud(l, i, layers, layouts); err != nil {
+		if err := placeCloud(ctx, l, i, layers, layouts, p.reference); err != nil {
 			l.Registration = "Cloud registration unavailable"
 			l.Unsupported = err.Error()
 			l.Placement = "Unregistered cloud data; no overlay fabricated"
@@ -310,7 +352,7 @@ func cloudGridRecord(raw info, index int) (treRecord, error) {
 	}
 	return r, nil
 }
-func placeCloud(l *ViewerLayer, index int, layers []ViewerLayer, layouts []imageLayout) error {
+func placeCloud(ctx context.Context, l *ViewerLayer, index int, layers []ViewerLayer, layouts []imageLayout, plane info) error {
 	r, err := cloudGridRecord(l.raw, index)
 	if err != nil {
 		return err
@@ -343,18 +385,22 @@ func placeCloud(l *ViewerLayer, index int, layers []ViewerLayer, layouts []image
 		}
 	}
 	root := layers[ref]
-	if root.MeshSize != 1 {
-		return errors.New("Cloud grid registration to nonlinear reference transform unsupported")
-	}
 	number := func(k string) float64 { v, _ := strconv.ParseFloat(strings.TrimSpace(r.Fields[k]), 64); return v }
 	x, y := number("ORIGIN_SAMPLE")-1, number("ORIGIN_LINE")-1
 	cw, ch := number("CS_CELL_SIZE"), number("AS_CELL_SIZE")
-	a, b, c := root.Mesh[0], root.Mesh[1], root.Mesh[2]
-	place := func(x, y float64) [2]float64 {
-		return [2]float64{a[0] + (b[0]-a[0])*x/float64(root.Width) + (c[0]-a[0])*y/float64(root.Height), a[1] + (b[1]-a[1])*x/float64(root.Width) + (c[1]-a[1])*y/float64(root.Height)}
+	if root.Registration == "Registered" {
+		l.Mesh, l.MeshSize, err = imageViewerMesh(ctx, root, plane, x, y, float64(l.Width)*cw, float64(l.Height)*ch)
+		if err != nil {
+			return errors.New("Cloud grid geographic transformation failed")
+		}
+	} else {
+		a, b, c := root.Mesh[0], root.Mesh[1], root.Mesh[2]
+		place := func(x, y float64) [2]float64 {
+			return [2]float64{a[0] + (b[0]-a[0])*x/float64(root.Width) + (c[0]-a[0])*y/float64(root.Height), a[1] + (b[1]-a[1])*x/float64(root.Width) + (c[1]-a[1])*y/float64(root.Height)}
+		}
+		l.Mesh = [][2]float64{place(x, y), place(x+float64(l.Width)*cw, y), place(x, y+float64(l.Height)*ch), place(x+float64(l.Width)*cw, y+float64(l.Height)*ch)}
+		l.MeshSize = 1
 	}
-	l.Mesh = [][2]float64{place(x, y), place(x+float64(l.Width)*cw, y), place(x, y+float64(l.Height)*ch), place(x+float64(l.Width)*cw, y+float64(l.Height)*ch)}
-	l.MeshSize = 1
 	l.Registration = "Registered"
 	l.Placement = fmt.Sprintf("CSCCGA image segment %d → %s synthetic image rooted at segment %d; one-based origin; cell %.0f × %.0f pixels", index, sensor, ref, cw, ch)
 	if root.Registration != "Registered" {

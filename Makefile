@@ -1,5 +1,5 @@
 OUTPUT ?= bin
-SEMVER ?= 1.5.2
+SEMVER ?= 1.5.3
 VERSION ?= $(SEMVER)-dev
 RELEASE_TAG ?= v$(SEMVER)
 LDFLAGS = -ldflags "-X main.version=$(VERSION)"

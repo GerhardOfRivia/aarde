@@ -8,6 +8,7 @@ import {
 import { AccessGate, ThemeControl } from "./Access";
 import type { Session } from "./Access";
 import { ViewerLinks } from "./ViewerLinks";
+import { ViewerProgress } from "./ViewerProgress";
 import { GeoJSONInput } from "./GeoJSONInput";
 import type { MapHandle } from "./MapCanvas";
 import { APIError, request, search } from "./types";
@@ -44,7 +45,7 @@ export default function App() {
     return () => window.removeEventListener("popstate", update);
   }, []);
   return <AccessGate>{(session) => location.path === "/image-viewer"
-    ? <Suspense fallback={<p>Loading Image Viewer…</p>}><ImageViewer key={location.query} session={session} query={location.query} /></Suspense>
+    ? <Suspense fallback={<div className="viewer-startup"><ViewerProgress label="Loading Image Viewer…" /></div>}><ImageViewer key={location.query} session={session} query={location.query} /></Suspense>
     : <CatalogApp session={session} />}</AccessGate>;
 }
 

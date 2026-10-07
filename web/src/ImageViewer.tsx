@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
-import { Alert, Button, CircularProgress } from '@mui/material';
+import { Alert, Button } from '@mui/material';
 import type { FeatureCollection, Polygon, MultiPolygon } from 'geojson';
 import type { Session } from './Access';
 import { ThemeControl } from './Access';
@@ -7,6 +7,7 @@ import { APIError, request } from './types';
 import { manifestURL, viewerReference, ViewerLoader } from './viewer';
 import type { ViewerManifest, ViewerLayer } from './viewer';
 import { ViewerCanvas } from './ViewerCanvas';
+import { ViewerProgress } from './ViewerProgress';
 import type { ViewerPixels } from './ViewerCanvas';
 import 'ol/ol.css';
 
@@ -16,7 +17,7 @@ export default function ImageViewer({ session, query }: { session: Session; quer
   const settings = useRef(new Map<string, { opacity: number; visible: boolean }>());
   const [manifest, setManifest] = useState<ViewerManifest | null>(null);
   const [resolution, setResolution] = useState('auto'), [attempt, retry] = useReducer(n => n + 1, 0);
-  const [error, setError] = useState(''), [loading, setLoading] = useState(false);
+  const [error, setError] = useState(''), [loading, setLoading] = useState(session.info.authenticated);
   const [, redraw] = useReducer(n => n + 1, 0);
   const { token, info, unauthorized } = session;
 
@@ -73,6 +74,11 @@ export default function ImageViewer({ session, query }: { session: Session; quer
   }, [query, resolution, token, info.authenticated, unauthorized, attempt]);
 
   const entries = [...(loader.current?.entries.values() ?? [])];
+  const loadable = entries.filter(entry => !entry.layer.unsupported);
+  const loaded = loadable.filter(entry => entry.state === 'loaded').length;
+  const failed = loadable.filter(entry => entry.state === 'error').length;
+  const loadingLayers = loadable.some(entry => entry.state === 'queued' || entry.state === 'loading');
+  const busy = info.authenticated && (loading || loadingLayers);
   return <div className="app image-viewer">
     <header className="header">
       <a className="brand" href="/"><span className="brand-mark">◈</span>aarde</a>
@@ -95,8 +101,10 @@ export default function ImageViewer({ session, query }: { session: Session; quer
     {!info.authenticated && <Alert severity="info">Source imagery requires authentication, including in public catalogs. <Button onClick={session.signIn}>Sign in to open Image Viewer</Button></Alert>}
     {error && <Alert severity="error">{error} <Button onClick={retry}>Reload viewer</Button></Alert>}
     <main className="viewer-workspace">
-      <div className="viewer-stage"><div ref={target} className="viewer-canvas" tabIndex={0} aria-label="Image layers: drag to pan, wheel or pinch to zoom" />
-        {loading && <div className="viewer-loading"><CircularProgress size={24} /> Loading image manifest…</div>}
+      <div className="viewer-stage"><div ref={target} className="viewer-canvas" tabIndex={0} aria-label="Image layers: drag to pan, wheel or pinch to zoom" aria-busy={busy} />
+        {busy && <ViewerProgress label={loading ? 'Loading image manifest…' : 'Loading image layers…'}
+          detail={loading ? undefined : `${loaded} of ${loadable.length} layers loaded${failed ? ` · ${failed} failed` : ''}`}
+          value={loading ? undefined : (loaded + failed) / loadable.length * 100} />}
         <div className="viewer-hint">Drag to pan · wheel or pinch to zoom · zoom uses the loaded display pixels</div>
       </div>
       <aside className="viewer-panel" aria-label="Image layers">

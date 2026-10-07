@@ -23,6 +23,14 @@ retry action while successfully loaded layers remain usable. Unsupported layers 
 why they cannot render. The scene fits once from the manifest; later arrivals never reset
 the view.
 
+A loading indicator stays visible while the viewer opens and reads the image manifest.
+While image and cloud layers load, it shows a progress bar and the number of loaded
+layers. Progress counts completed layer requests, including decoding, rather than bytes
+or estimated time. Failed requests are reported separately; unsupported layers are
+excluded from progress. The indicator clears when loading finishes and reappears for
+resolution changes, viewer reloads, and layer retries. Loaded imagery remains interactive
+while other layers finish.
+
 The resolution selector requests complete replacement images only on explicit changes.
 **Auto** uses native dimensions if the entire scene fits the configured budget, otherwise
 bounded whole-segment images. **Preview** caps each dimension at 1024 and each layer at
