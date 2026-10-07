@@ -13,9 +13,16 @@ RUN go mod download
 COPY . .
 COPY --from=frontend /src/web/dist ./web/dist
 
-FROM build AS test
+FROM golang:1.25-bookworm AS test
+WORKDIR /src
 ENV AARDE_REQUIRE_GDAL=true
-RUN apt-get update && apt-get install -y --no-install-recommends gdal-bin && gdalinfo --format NITF && gdalinfo --format JPEG && gdalinfo --format JP2OpenJPEG && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends gdal-bin \
+    && gdalinfo --format NITF && gdalinfo --format JPEG \
+    && gdalinfo --format JP2OpenJPEG && rm -rf /var/lib/apt/lists/*
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+COPY --from=frontend /src/web/dist ./web/dist
 CMD ["go", "test", "-race", "-count=1", "-v", "./..."]
 
 FROM build AS binary

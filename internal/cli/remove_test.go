@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"context"
@@ -42,7 +42,7 @@ func TestRemoveMutuallyExclusiveOptionsBeforeDatabase(t *testing.T) {
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			var out strings.Builder
-			err := runWithInput(context.Background(), append([]string{"remove"}, args...), brokenConfirmation{}, &out)
+			err := execute(context.Background(), append([]string{"remove"}, args...), brokenConfirmation{}, &out, io.Discard, "dev")
 			if err == nil || !strings.Contains(err.Error(), "-image and -catalog are mutually exclusive") || !strings.Contains(err.Error(), removeUsage) {
 				t.Fatalf("expected mutually exclusive flags error before opening the database: %v", err)
 			}
@@ -62,7 +62,7 @@ func TestRemoveInvalidOptionsBeforeDatabase(t *testing.T) {
 		{"-image= xyz"}, {"-catalog=bad/catalog"}, {"-image=bad\nname"},
 		{"-catalog=" + strings.Repeat("x", 256)}, {"-catalog=project-123", "-yes"},
 	} {
-		err := runWithInput(context.Background(), append([]string{"remove"}, args...), strings.NewReader("yes\n"), io.Discard)
+		err := execute(context.Background(), append([]string{"remove"}, args...), strings.NewReader("yes\n"), io.Discard, io.Discard, "dev")
 		if err == nil || strings.Contains(err.Error(), "AARDE_DATABASE_URL") {
 			t.Errorf("%v should fail validation before opening the database: %v", args, err)
 		}
@@ -74,7 +74,7 @@ func TestRemoveHelpAndDatabaseRequirement(t *testing.T) {
 	for _, args := range [][]string{{"--help"}, {"remove", "--help"}} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			var out strings.Builder
-			if err := run(context.Background(), args, &out); err != nil {
+			if err := runCommand(context.Background(), args, &out); err != nil {
 				t.Fatal(err)
 			}
 			for _, want := range []string{"-image", "-catalog", "default catalog", "confirmation", "source imagery files are preserved", "exactly one", "mutually exclusive"} {
@@ -87,7 +87,7 @@ func TestRemoveHelpAndDatabaseRequirement(t *testing.T) {
 			}
 		})
 	}
-	if err := run(context.Background(), []string{"remove", "-image=xyz"}, io.Discard); err == nil || err.Error() != "AARDE_DATABASE_URL is required" {
+	if err := runCommand(context.Background(), []string{"remove", "-image=xyz"}, io.Discard); err == nil || err.Error() != "AARDE_DATABASE_URL is required" {
 		t.Fatalf("missing database configuration: %v", err)
 	}
 }

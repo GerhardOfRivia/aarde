@@ -58,6 +58,21 @@ docker compose exec aarde aarde import /data/
 Add `--recursive` to include subdirectories, or `--catalog <name>` to import
 into a named catalog.
 
+## Help, output, and exit status
+
+Run `aarde --help` for the command list or `aarde <command> --help` for command
+options. Help and version work without valid environment configuration. Running
+`aarde` without arguments prints help and succeeds.
+
+Help, version, JSON results, import progress and summaries, and removal prompts
+go to stdout. Errors, per-file import failures, and diagnostic logs go to stderr.
+Exit status is `0` for success (including help and cancelled removal), `1` for
+operational failures, and `2` for invalid command syntax or flag values. Command
+arguments are validated before configuration or database access.
+
+Flags may precede or follow positional arguments. Use `--` to end flag parsing
+for a path beginning with a dash, for example `aarde inspect -- -scene.tif`.
+
 ## Inspect and import
 
 Flags may precede or follow the import path. `inspect` prints JSON with format, source CRS (WKT), source corners, width, height, band count, acquisition time, cloud-cover percentage, calculated EPSG:4326 footprint, SHA-256 checksum, asset path, and metadata. It does not need a database.

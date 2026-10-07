@@ -2,7 +2,7 @@
 
 [Documentation index](README.md) · [Project README](../README.md)
 
-Open **Image Viewer** from any catalog row, or use a copied URL:
+Select a catalog row and open **Image Viewer** from its details, or use a copied URL:
 
 ```text
 /image-viewer?catalog=default&image=scene-001
@@ -45,13 +45,15 @@ continues to represent the physical file; TIFF overviews and masks are not scene
 No source file is modified, no COG/tile/pyramid is created, no image windows are fetched,
 and no queue, preparation action, new backend service, or polling loop is introduced.
 
-The manifest's viewer plane uses reference-image pixels: x increases right, y increases
-up, and the upper-left pixel edge is the origin. Original image dimensions and placement
-are independent of display downsampling. A row-major placement mesh describes original
-pixel edges; a one-cell mesh is an exact affine placement. Rotation, shear, differing
-pixel resolutions and partial coverage remain intact. Different geographic CRSs use
-actual GDAL transformations into the reference CRS and a 16×16 interpolation mesh;
-this is display registration, not survey-grade orthorectification. The frontend uses
+Georeferenced imagery uses a north-up Web Mercator plane, the same projection as the
+catalog map, so the image retains its footprint's orientation, proportions and shape.
+Coordinates are translated to the first registered image's upper-left edge and uniformly
+scaled to approximately its pixel size; source rotation and shear are preserved even for
+that first image. Original image dimensions and placement are independent of display
+downsampling. A row-major placement mesh describes original pixel edges. GDAL transforms
+affine georeferencing and GCPs into the map projection using a 16×16 interpolation mesh;
+GCP placement uses the same bounded thin-plate spline method as catalog footprint inspection.
+This is approximate display registration, not survey-grade orthorectification. The frontend uses
 the installed OpenLayers map interactions and one custom non-tiled canvas compositor.
 There are no viewer basemap dependencies or external CDN assets.
 
@@ -61,8 +63,7 @@ evidence. The supported NCDRD profile uses unit `IMAG`; other magnifications are
 interpreted. Valid independently georeferenced images can still register geographically.
 Unregistered independent images/groups remain visible in separated image coordinates,
 with explicit labels. A single image without geographic registration uses its original
-pixel coordinates. RPC/DEM orthorectification and GCP-only viewer registration are not
-implemented (catalog GCP footprint inspection is unchanged).
+pixel coordinates. RPC/DEM orthorectification is not implemented.
 
 ## Cloud representations
 
@@ -73,8 +74,9 @@ GDAL domains. `REG_SENSOR` resolves an unambiguous PAN/MS synthetic image. One-b
 origin fields become zero-based pixel edges; cell sizes are in reference-image pixels,
 and grid dimensions must match the raster. The grid spans the complete synthetic image,
 including its constituent attachment offsets. It requires no independent geotransform.
-Ambiguous reference sensors, unsupported metadata/encodings or nonlinear reference
-placement produce an explicit unsupported layer; imagery still loads.
+Cloud cells use the reference image's map transformation, including nonlinear reprojection
+and GCP placement. Ambiguous reference sensors, unsupported metadata/encodings or failed
+transformations produce an explicit unsupported layer; imagery still loads.
 
 Cloud-grid values are categorical: **0 clear (transparent)**, **255 cloud (cyan)**,
 **1–254 reserved (magenta)**. Reserved values are not probabilities. Both GDAL downsampling
@@ -127,7 +129,8 @@ respect to catalog/source data, so the existing `read_only` capability is unchan
 
 The browser loads at most two layers concurrently and releases old decoded images before
 resolution replacement. Budget reporting reserves 16 bytes per display pixel for decoded
-copies/texture and replacement overhead, plus a single viewport compositing canvas.
+copies/texture and replacement overhead, plus a viewport compositing canvas and one
+reusable viewport scratch canvas for seamless mesh rendering with layer opacity.
 Every segment participates in the budget; later layers are never silently omitted.
 The backend keeps at most four bounded metadata plans (no raster cache); all cache hits
 still require authorization and a fresh source check. Plan metadata is capped at 16 MiB.

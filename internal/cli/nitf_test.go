@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"context"
@@ -23,7 +23,7 @@ func TestNITFCLI(t *testing.T) {
 	testutil.NITF(t, single)
 	testutil.MultiNITF(t, multi)
 	var output strings.Builder
-	if err := run(context.Background(), []string{"inspect", single}, &output); err != nil {
+	if err := runCommand(context.Background(), []string{"inspect", single}, &output); err != nil {
 		t.Fatal(err)
 	}
 	var inspected raster.Inspection
@@ -31,11 +31,11 @@ func TestNITFCLI(t *testing.T) {
 		t.Fatalf("single inspection JSON: %s", output.String())
 	}
 	output.Reset()
-	if err := run(context.Background(), []string{"inspect", multi}, &output); err != nil || !strings.Contains(output.String(), `"segments"`) {
+	if err := runCommand(context.Background(), []string{"inspect", multi}, &output); err != nil || !strings.Contains(output.String(), `"segments"`) {
 		t.Fatalf("multi inspect: %v", err)
 	}
 	output.Reset()
-	if err := run(context.Background(), []string{"import", dir, "--recursive", "--dry-run", "--catalog", "example"}, &output); err != nil {
+	if err := runCommand(context.Background(), []string{"import", dir, "--recursive", "--dry-run", "--catalog", "example"}, &output); err != nil {
 		t.Fatal("mixed dry run failed")
 	}
 	for _, want := range []string{"offline", multi, "Failed: 0", "Would import: 2", "example/scene"} {
@@ -65,7 +65,7 @@ func TestNITFCLI(t *testing.T) {
 	u.RawQuery = q.Encode()
 	t.Setenv("AARDE_DATABASE_URL", u.String())
 	output.Reset()
-	if err := run(ctx, []string{"import", dir, "--recursive", "--dry-run", "--catalog", "nitf-cli-dry"}, &output); err != nil || !strings.Contains(output.String(), "Would import: 2") || !strings.Contains(output.String(), "Failed: 0") {
+	if err := runCommand(ctx, []string{"import", dir, "--recursive", "--dry-run", "--catalog", "nitf-cli-dry"}, &output); err != nil || !strings.Contains(output.String(), "Would import: 2") || !strings.Contains(output.String(), "Failed: 0") {
 		t.Fatalf("database dry run: %v %s", err, output.String())
 	}
 }

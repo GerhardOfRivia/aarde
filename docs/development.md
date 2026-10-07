@@ -25,6 +25,15 @@ flowchart TD
 
 `internal/raster` invokes GDAL; `internal/importer` discovers files and runs imports; `internal/geo` validates bounded GeoJSON structure; `internal/catalog` owns models and catalog operations; `internal/database` owns parameterized SQL and migrations; `internal/api` owns validation and response DTOs; `internal/server` owns middleware, embedded assets, and shutdown; `internal/config` reads environment settings. Both CLI and HTTP call the same catalog service. Viewer requests resolve catalog identity through that service, then read the source through `internal/raster`; see [viewer architecture](image-viewer.md#architecture-and-registration).
 
+`cmd/aarde/main.go` only passes arguments, stdout, stderr, and the injected build
+version to `internal/cli.RunVersion`, then exits with its return code.
+`internal/cli` owns parsing, help, exit status, signal cancellation, configuration,
+and command orchestration. Its handlers call the domain packages above; domain
+packages do not import the CLI. Tests invoke the CLI directly with supplied
+streams and, for confirmation or cancellation, an input reader and context.
+The CLI temporarily routes the existing domain logger to its stderr and restores
+it on return; invocations that use configuration are serialized for that reason.
+
 ## Database schema
 
 The SQL source is in [`migrations/`](../migrations/). Startup and normal imports apply pending migrations automatically; existing rows receive `NULL` for newly added cloud cover.

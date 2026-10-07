@@ -1,8 +1,8 @@
 OUTPUT ?= bin
-SEMVER ?= 1.5.1
+SEMVER ?= 1.5.2
 VERSION ?= $(SEMVER)-dev
 RELEASE_TAG ?= v$(SEMVER)
-LDFLAGS = -ldflags "-X main.Version=$(VERSION)"
+LDFLAGS = -ldflags "-X main.version=$(VERSION)"
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 
@@ -17,8 +17,8 @@ web:
 	# npm ci && npm run build
 	docker run --rm --user $$(id -u):$$(id -g) --mount type=bind,src=$(CURDIR),dst=/workspace -w /workspace/web node:22-bookworm-slim /bin/sh -lc 'npm ci && npm run build'
 
-build: web
-	go build -trimpath -o $(OUTPUT)/aarde ./cmd/aarde
+build:
+	go build -trimpath $(LDFLAGS) -o $(OUTPUT)/aarde ./cmd/aarde
 
 integration:
 	@trap 'docker compose -p aarde-test -f docker-compose.test.yml down' EXIT; \

@@ -1,10 +1,12 @@
-package main
+package cli
 
 import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -12,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/GerhardOfRivia/aarde/internal/api"
 	"github.com/GerhardOfRivia/aarde/internal/catalog"
 	"github.com/GerhardOfRivia/aarde/internal/database"
 	"github.com/GerhardOfRivia/aarde/internal/geo"
@@ -75,10 +78,18 @@ func TestRemoveCLIWithPostGIS(t *testing.T) {
 		importImage(name, id, checksum)
 	}
 	importImage(cat, "second", strings.Repeat("b", 64))
+	var stdout, stderr strings.Builder
+	if code := Run([]string{"search", "--id", id, "--catalog", cat}, &stdout, &stderr); code != 0 {
+		t.Fatalf("search: code=%d stderr=%s", code, &stderr)
+	}
+	var page api.SearchResponse
+	if err := json.Unmarshal([]byte(stdout.String()), &page); err != nil || len(page.Items) != 1 || page.Items[0].ImageID != id {
+		t.Fatalf("search JSON: %s, error=%v", &stdout, err)
+	}
 	invoke := func(input string, args ...string) (string, error) {
 		t.Helper()
 		var out strings.Builder
-		err := runWithInput(ctx, append([]string{"remove"}, args...), strings.NewReader(input), &out)
+		err := execute(ctx, append([]string{"remove"}, args...), strings.NewReader(input), &out, io.Discard, "dev")
 		return out.String(), err
 	}
 	assertPresent := func(cat, id string, present bool) {
@@ -119,8 +130,10 @@ func TestRemoveCLIWithPostGIS(t *testing.T) {
 		assertPresent(cat, id, true)
 		assertPresent(cat, "second", true)
 	}
-	if out, err := invoke("yes\n", "-catalog", cat); err != nil || !strings.Contains(out, "(2 image records)") {
-		t.Fatalf("catalog removal: %v %s", err, out)
+	stdout.Reset()
+	stderr.Reset()
+	if code := runWithInput(ctx, []string{"remove", "-catalog", cat}, strings.NewReader("yes\n"), &stdout, &stderr, "dev"); code != 0 || !strings.Contains(stdout.String(), "(2 image records)") {
+		t.Fatalf("catalog removal: code=%d stdout=%s stderr=%s", code, &stdout, &stderr)
 	}
 	assertPresent(cat, id, false)
 	assertPresent(cat, "second", false)

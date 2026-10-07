@@ -1,15 +1,15 @@
-package main
+package cli
 
 import (
 	"bufio"
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"strings"
 
 	"github.com/GerhardOfRivia/aarde/internal/catalog"
+	"github.com/GerhardOfRivia/aarde/internal/config"
 )
 
 const removeUsage = "usage: aarde remove -image <exact-ID> | aarde remove -catalog <catalog-ID>"
@@ -19,9 +19,9 @@ type removeOptions struct {
 }
 
 func parseRemoveOptions(args []string, out io.Writer) (removeOptions, error) {
-	flags := flag.NewFlagSet("remove", flag.ContinueOnError)
-	flags.SetOutput(out)
+	flags := newFlagSet("remove", out, removeUsage)
 	flags.Usage = func() {
+		out := flags.Output()
 		fmt.Fprintln(out, removeUsage)
 		fmt.Fprintln(out, "Specify exactly one of -image or -catalog; the flags are mutually exclusive.")
 		fmt.Fprintln(out, "Delete database records only; source imagery files are preserved.")
@@ -31,14 +31,14 @@ func parseRemoveOptions(args []string, out io.Writer) (removeOptions, error) {
 	opts := removeOptions{}
 	flags.StringVar(&opts.imageID, "image", "", "exact image ID in the default catalog to remove without confirmation")
 	flags.StringVar(&opts.catalogID, "catalog", "", "catalog to remove after confirmation")
-	if err := flags.Parse(args); err != nil {
+	if err := parseFlags(flags, args); err != nil {
 		return opts, err
 	}
 	if flags.NArg() != 0 || flags.NFlag() == 0 {
-		return opts, errors.New(removeUsage)
+		return opts, usageError{removeUsage}
 	}
 	if flags.NFlag() > 1 {
-		return opts, errors.New("-image and -catalog are mutually exclusive; " + removeUsage)
+		return opts, usageError{"-image and -catalog are mutually exclusive; " + removeUsage}
 	}
 	// Validate explicitly supplied empty flags as well, so -image= cannot
 	// accidentally turn a single-image removal into a whole-catalog removal.
@@ -49,12 +49,27 @@ func parseRemoveOptions(args []string, out io.Writer) (removeOptions, error) {
 		}
 	})
 	if invalid != nil {
-		return opts, invalid
+		return opts, usageError{invalid.Error()}
 	}
 	if opts.catalogID == "" {
 		opts.catalogID = "default"
 	}
 	return opts, nil
+}
+
+func (c commandLine) removeRecords(ctx context.Context, args []string) error {
+	opts, err := parseRemoveOptions(args, c.stdout)
+	if err != nil {
+		return err
+	}
+	return c.withConfig(ctx, func(cfg config.Config) error {
+		db, err := openDatabase(ctx, cfg, false)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		return remove(ctx, catalog.New(db), opts, c.stdin, c.stdout)
+	})
 }
 
 type removalService interface {
