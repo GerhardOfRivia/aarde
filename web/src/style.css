@@ -260,12 +260,14 @@ h2 {
   border-top: 1px solid var(--border-soft);
   min-height: 42px;
 }
-.basemap-control {
+.basemap-control,
+.page-size-control {
   display: inline-flex;
   align-items: center;
   gap: 7px;
 }
-.basemap-control select {
+.basemap-control select,
+.page-size-control select {
   max-width: 150px;
   padding: 6px;
   border: 1px solid var(--border);
@@ -275,10 +277,12 @@ h2 {
   font: inherit;
   cursor: pointer;
 }
-.basemap-control select:disabled {
+.basemap-control select:disabled,
+.page-size-control select:disabled {
   cursor: default;
 }
-.basemap-control select:focus-visible {
+.basemap-control select:focus-visible,
+.page-size-control select:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
@@ -314,6 +318,7 @@ h2 {
 }
 .results-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   text-align: left;
   font-size: 11px;
@@ -368,6 +373,16 @@ h2 {
   font-size: 10px;
   color: var(--text-muted);
 }
+.result-button .result-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 4px;
+  color: var(--text-muted);
+}
+.result-meta span {
+  color: inherit;
+}
 .muted {
   color: var(--text-muted);
 }
@@ -400,6 +415,7 @@ h2 {
 .pagination {
   padding: 10px 15px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   border-top: 1px solid var(--border-soft);
@@ -713,7 +729,6 @@ h2 {
 .filter-chip:hover { background: var(--surface-hover); }
 .filter-chip.pending-removal { border-style: dashed; color: var(--text-muted); cursor: default; }
 .filter-chip:focus-visible, .more-filters summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-.result-cloud { display: block; font-size: 10px; color: var(--text-muted); margin-top: 8px; }
 @media (max-width: 1050px) {
   .filter-columns { gap: 18px; }
   .filter-heading { align-items: flex-start; }

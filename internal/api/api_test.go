@@ -7,6 +7,7 @@ import (
 	"github.com/GerhardOfRivia/aarde/internal/geo"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -24,8 +25,12 @@ func TestValidation(t *testing.T) {
 		{"POST", "/imagery/search", `{} {}`, 400},
 		{"POST", "/imagery/search", `{"surprise":1}`, 400},
 		{"POST", "/imagery/search", `{"geometry":` + strings.Repeat(" ", MaxBodyBytes) + `}`, 413},
-		{"GET", "/imagery?limit=201", "", 400},
+		{"GET", "/imagery?limit=501", "", 400},
+		{"GET", "/imagery?limit=-1", "", 400},
 		{"GET", "/imagery?limit=0", "", 400},
+		{"POST", "/imagery/search", `{"geometry":` + searchPolygon + `,"limit":501}`, 400},
+		{"POST", "/imagery/search", `{"geometry":` + searchPolygon + `,"limit":-1}`, 400},
+		{"POST", "/imagery/search", `{"geometry":` + searchPolygon + `,"limit":0}`, 400},
 		{"GET", "/imagery?offset=-1", "", 400},
 		{"GET", "/imagery?image_id=", "", 400},
 		{"DELETE", "/imagery", "", 405},
@@ -78,6 +83,44 @@ func (s queryStore) Search(_ context.Context, q catalog.Query) (catalog.Page, er
 }
 
 const searchPolygon = `{"type":"Polygon","coordinates":[[[0,0],[2,0],[2,2],[0,2],[0,0]]]}`
+
+func TestPageSizeQueryParsing(t *testing.T) {
+	for _, raw := range []string{"", "1", "50", "100", "200", "500"} {
+		for _, method := range []string{"GET", "POST"} {
+			t.Run(method+"/"+raw, func(t *testing.T) {
+				var got catalog.Query
+				h := Routes(catalog.New(queryStore{query: &got}), "dev", Access{PublicRead: true}, "none")
+				path, body := "/imagery?offset=500", ""
+				if method == "GET" && raw != "" {
+					path += "&limit=" + raw
+				} else if method == "POST" {
+					path = "/imagery/search"
+					body = `{"geometry":` + searchPolygon + `,"offset":500`
+					if raw != "" {
+						body += `,"limit":` + raw
+					}
+					body += "}"
+				}
+				w := httptest.NewRecorder()
+				h.ServeHTTP(w, httptest.NewRequest(method, path, strings.NewReader(body)))
+				if w.Code != 200 {
+					t.Fatalf("%d: %s", w.Code, w.Body.String())
+				}
+				want := 50
+				if raw != "" {
+					want, _ = strconv.Atoi(raw)
+				}
+				var page SearchResponse
+				if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil {
+					t.Fatal(err)
+				}
+				if got.Limit != want || got.Offset != 500 || page.Limit != want || page.Offset != 500 {
+					t.Fatalf("pagination lost: query %+v, response %+v", got, page)
+				}
+			})
+		}
+	}
+}
 
 func TestCloudCoverQueryParsing(t *testing.T) {
 	for _, raw := range []string{"", "0", "19.9", "20", "100", "null"} {

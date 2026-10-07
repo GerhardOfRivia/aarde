@@ -28,28 +28,30 @@ test("GET and spatial requests retain cloud cover with other filters and paginat
   for (const spatial of [false, true]) {
     for (const cloudCoverLT of [undefined, 0, 19.9, 20, 100]) {
       const criteria = { catalog: "example", cloudCoverLT, ...(spatial ? { geometry } : { ids: ["one", "two"] }) };
-      for (const offset of [0, 50, 100]) {
-        await search("test-token", criteria, offset, signal);
-        const { url, options } = calls.at(-1);
-        assert.equal(options.signal, signal);
-        assert.equal(options.headers.get("Authorization"), "Bearer test-token");
-        if (spatial) {
-          assert.equal(url.pathname, "/api/v1/imagery/search");
-          assert.equal(options.method, "POST");
-          const body = JSON.parse(options.body);
-          assert.equal(Object.hasOwn(body, "cloud_cover_lt"), cloudCoverLT !== undefined);
-          assert.equal(body.cloud_cover_lt, cloudCoverLT);
-          assert.deepEqual(body.geometry, geometry);
-          assert.equal(body.catalog_id, "example");
-          assert.equal(body.offset, offset);
-          assert.equal(body.limit, 50);
-        } else {
-          assert.equal(url.pathname, "/api/v1/imagery");
-          assert.equal(url.searchParams.get("cloud_cover_lt"), cloudCoverLT === undefined ? null : String(cloudCoverLT));
-          assert.deepEqual(url.searchParams.getAll("image_id"), ["one", "two"]);
-          assert.equal(url.searchParams.get("catalog_id"), "example");
-          assert.equal(url.searchParams.get("offset"), String(offset));
-          assert.equal(url.searchParams.get("limit"), "50");
+      for (const limit of [50, 100, 200, 500]) {
+        for (const offset of [0, limit, limit * 2]) {
+          await search("test-token", criteria, offset, signal, limit);
+          const { url, options } = calls.at(-1);
+          assert.equal(options.signal, signal);
+          assert.equal(options.headers.get("Authorization"), "Bearer test-token");
+          if (spatial) {
+            assert.equal(url.pathname, "/api/v1/imagery/search");
+            assert.equal(options.method, "POST");
+            const body = JSON.parse(options.body);
+            assert.equal(Object.hasOwn(body, "cloud_cover_lt"), cloudCoverLT !== undefined);
+            assert.equal(body.cloud_cover_lt, cloudCoverLT);
+            assert.deepEqual(body.geometry, geometry);
+            assert.equal(body.catalog_id, "example");
+            assert.equal(body.offset, offset);
+            assert.equal(body.limit, limit);
+          } else {
+            assert.equal(url.pathname, "/api/v1/imagery");
+            assert.equal(url.searchParams.get("cloud_cover_lt"), cloudCoverLT === undefined ? null : String(cloudCoverLT));
+            assert.deepEqual(url.searchParams.getAll("image_id"), ["one", "two"]);
+            assert.equal(url.searchParams.get("catalog_id"), "example");
+            assert.equal(url.searchParams.get("offset"), String(offset));
+            assert.equal(url.searchParams.get("limit"), String(limit));
+          }
         }
       }
     }

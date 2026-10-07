@@ -153,8 +153,8 @@ func NormalizeQuery(q *Query) error {
 	if q.Limit == 0 {
 		q.Limit = 50
 	}
-	if q.Limit < 1 || q.Limit > 200 || q.Offset < 0 || q.Offset > 1000000 {
-		return errors.New("limit must be 1-200 and offset 0-1000000")
+	if q.Limit < 1 || q.Limit > 500 || q.Offset < 0 || q.Offset > 1000000 {
+		return errors.New("limit must be 1-500 and offset 0-1000000")
 	}
 	if q.CatalogID != "" {
 		if err := ValidateName(q.CatalogID); err != nil {

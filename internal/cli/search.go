@@ -40,7 +40,7 @@ func parseSearchQuery(args []string, out io.Writer) (catalog.Query, error) {
 	q := catalog.Query{}
 	flags.StringVar(&ids, "id", "", "exact image ID, or comma-separated IDs")
 	flags.StringVar(&q.CatalogID, "catalog", "default", "catalog ID")
-	flags.IntVar(&q.Limit, "limit", 50, "page size (1-200)")
+	flags.IntVar(&q.Limit, "limit", 50, "page size (1-500)")
 	flags.IntVar(&q.Offset, "offset", 0, "pagination offset")
 	flags.Func("cloud-cover-lt", "scene cloud cover strictly less than this percentage (0-100); excludes unknown values; not selected-area cloud cover", func(raw string) error {
 		value, err := strconv.ParseFloat(raw, 64)

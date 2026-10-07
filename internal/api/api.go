@@ -268,7 +268,7 @@ func (h Handler) search(w http.ResponseWriter, r *http.Request) {
 	if body.Limit != nil {
 		q.Limit = *body.Limit
 		if q.Limit == 0 {
-			Error(w, 400, "invalid_request", "limit must be 1-200")
+			Error(w, 400, "invalid_request", "limit must be 1-500")
 			return
 		}
 	}

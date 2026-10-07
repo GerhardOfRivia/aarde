@@ -279,10 +279,10 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 200,
+              "maximum": 500,
               "default": 50
             },
-            "description": "Page size; values outside 1\u2013200 are rejected."
+            "description": "Page size; values outside 1\u2013500 are rejected."
           },
           {
             "name": "offset",
@@ -411,10 +411,10 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 200,
+              "maximum": 500,
               "default": 50
             },
-            "description": "Page size; values outside 1\u2013200 are rejected."
+            "description": "Page size; values outside 1\u2013500 are rejected."
           },
           {
             "name": "offset",
@@ -1454,7 +1454,7 @@
           "limit": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 200,
+            "maximum": 500,
             "default": 50
           },
           "offset": {
@@ -1794,7 +1794,7 @@
           "limit": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 200,
+            "maximum": 500,
             "default": 50
           },
           "offset": {

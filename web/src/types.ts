@@ -100,6 +100,7 @@ export function search(
   criteria: Search,
   offset: number,
   signal: AbortSignal,
+  limit = 50,
 ): Promise<Page> {
   if (criteria.geometry)
     return request("/api/v1/imagery/search", token, {
@@ -115,11 +116,11 @@ export function search(
         cloud_cover_lte: criteria.cloudCoverLTE,
         cloud_cover_unknown: criteria.cloudCoverUnknown,
         cloud_cover_lt: criteria.cloudCoverLT,
-        limit: 50,
+        limit,
         offset,
       }),
     });
-  const query = new URLSearchParams({ limit: "50", offset: String(offset) });
+  const query = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   if (criteria.cloudCoverLT !== undefined) query.set("cloud_cover_lt", String(criteria.cloudCoverLT));
   if (criteria.cloudCoverLTE !== undefined) query.set("cloud_cover_lte", String(criteria.cloudCoverLTE));
   if (criteria.cloudCoverUnknown) query.set("cloud_cover_unknown", criteria.cloudCoverUnknown);

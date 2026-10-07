@@ -39,7 +39,7 @@ curl -X POST http://localhost:8080/api/v1/imagery/search \
 
 ## Pagination and request limits
 
-Omit `catalog_id` to search all catalogs. List/search responses are `{ "items": [...], "limit": 50, "offset": 0, "has_more": false }`. Pagination is ordered by import time descending, then UUID; concurrent imports can shift offset-based pages. Limits default to 50 and are capped at 200. At most 100 exact IDs, 10,000 geometry positions, a 1 MiB request body, and offset 1,000,000 are accepted. Unknown search body fields, extra JSON values, invalid rings, out-of-range coordinates, and unsupported geometry types are rejected. PostGIS validates polygon topology, including self-intersections.
+Omit `catalog_id` to search all catalogs. List/search responses are `{ "items": [...], "limit": 50, "offset": 0, "has_more": false }`. Pagination is ordered by import time descending, then UUID; concurrent imports can shift offset-based pages. Limits default to 50 and are capped at 500. At most 100 exact IDs, 10,000 geometry positions, a 1 MiB request body, and offset 1,000,000 are accepted. Unknown search body fields, extra JSON values, invalid rings, out-of-range coordinates, and unsupported geometry types are rejected. PostGIS validates polygon topology, including self-intersections.
 
 ## Filters
 

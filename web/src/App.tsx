@@ -80,7 +80,7 @@ function CatalogApp({ session }: { session: Session }) {
     setFieldErrors({});
     setError("");
   }
-  async function run(next: FilterDraft, offset = 0) {
+  async function run(next: FilterDraft, offset = 0, limit = page.limit) {
     cancelSearch();
     const snapshot = structuredClone(next);
     const { criteria, errors } = buildSearch(snapshot);
@@ -97,7 +97,7 @@ function CatalogApp({ session }: { session: Session }) {
     setError("");
     setMode("");
     try {
-      const result = await search(token, criteria, offset, controller.signal);
+      const result = await search(token, criteria, offset, controller.signal, limit);
       if (controller.signal.aborted || active.current !== controller) return;
       setPage(result);
       setSelected(null);
@@ -367,8 +367,7 @@ function CatalogApp({ session }: { session: Session }) {
               <table className="results-table">
                 <thead>
                   <tr>
-                    <th>Image / catalog</th>
-                    <th>Acquired · UTC / clouds</th>
+                    <th scope="col">Image details</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -387,15 +386,13 @@ function CatalogApp({ session }: { session: Session }) {
                           <strong>{item.image_id}</strong>
                           <span>{item.catalog_id}</span>
                           <small>{item.display_name}</small>
+                          <span className="result-meta">
+                            <span>Acquired (UTC): {item.acquired_at
+                              ? new Date(item.acquired_at).toLocaleDateString(undefined, { timeZone: "UTC" })
+                              : "Unknown"}</span>
+                            <span>Clouds: {item.cloud_cover == null ? "Unknown" : `${item.cloud_cover}%`}</span>
+                          </span>
                         </button>
-                      </td>
-                      <td>
-                        {item.acquired_at ? (
-                          new Date(item.acquired_at).toLocaleDateString(undefined, { timeZone: "UTC" })
-                        ) : (
-                          <span className="muted">Unknown</span>
-                        )}
-                        <span className="result-cloud">Clouds: {item.cloud_cover == null ? "Unknown" : `${item.cloud_cover}%`}</span>
                       </td>
                     </tr>
                   ))}
@@ -404,6 +401,16 @@ function CatalogApp({ session }: { session: Session }) {
             )}
           </div>
           <div className="pagination">
+            <label className="page-size-control">
+              <span>Images per page</span>
+              <select
+                value={page.limit}
+                disabled={loading || dirty || mode === "draw"}
+                onChange={(event) => void run(applied, 0, Number(event.target.value))}
+              >
+                {[50, 100, 200, 500].map((size) => <option key={size} value={size}>{size}</option>)}
+              </select>
+            </label>
             <span aria-live="polite">
               {searched && page.items.length
                 ? `Showing ${page.offset + 1}–${page.offset + page.items.length}${page.has_more ? " · more available" : ""}`

@@ -14,6 +14,9 @@ rows, and footprints stay on the last successful search; pagination is disabled
 while changes are pending. Exact IDs use OR between IDs and AND with the other
 filter groups. Cloud percentage and acquisition date (UTC) appear on each result.
 The page shows a range and whether more results are available, rather than an exact total.
+Choose **Images per page** to show 50 (the default), 100, 200, or 500 results.
+Changing the page size returns to page one with the applied filters and keeps
+that size for subsequent searches and pages.
 
 ### Dates and cloud cover
 

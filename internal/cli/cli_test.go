@@ -57,7 +57,7 @@ func TestUsageErrorsBeforeConfiguration(t *testing.T) {
 		{"import", "one.tif", "--catalog=bad/name"}, {"import", "one.tif", "--cloud-cover=NaN"},
 		{"search"}, {"search", "--id"}, {"search", "--id="}, {"search", "--id=one,"},
 		{"search", "--id=one", "extra"}, {"search", "--id=one", "--limit=no"},
-		{"search", "--id=one", "--limit=-1"}, {"search", "--id=one", "--limit=201"},
+		{"search", "--id=one", "--limit=-1"}, {"search", "--id=one", "--limit=501"},
 		{"search", "--id=one", "--offset=-1"}, {"search", "--id=one", "--offset=1000001"},
 		{"search", "--id=one", "--cloud-cover-lt=Inf"},
 		{"remove"}, {"remove", "--image"}, {"remove", "--catalog"}, {"remove", "--image="},
