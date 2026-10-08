@@ -177,7 +177,7 @@ function CatalogApp({ session }: { session: Session }) {
     <div className="app">
       <header className="header">
         <a className="brand" href="/" aria-label="Aarde home">
-          <span className="brand-mark">◈</span>
+          <img className="brand-mark" src="/icon.png" alt="" width={42} height={42} />
           <span className="brand-lockup">
             <span>aarde</span>
             <span className="build-version" aria-label="Server version">

@@ -81,7 +81,7 @@ export default function ImageViewer({ session, query }: { session: Session; quer
   const busy = info.authenticated && (loading || loadingLayers);
   return <div className="app image-viewer">
     <header className="header">
-      <a className="brand" href="/"><span className="brand-mark">◈</span>aarde</a>
+      <a className="brand" href="/"><img className="brand-mark" src="/icon.png" alt="" width={42} height={42} />aarde</a>
       <div className="header-actions"><Button href="/">Back to catalog</Button><ThemeControl />
         {info.authenticated ? <Button onClick={() => session.signOut()}>Sign out</Button> : <Button onClick={session.signIn}>Sign in</Button>}
       </div>
